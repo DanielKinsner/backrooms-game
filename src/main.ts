@@ -13,9 +13,9 @@ import { FixturePool } from './world/lighting'
 import { createPostStack } from './fx/post'
 import { CamcorderHud } from './ui/hud'
 import { InteractSystem, NoteOverlay } from './player/interact'
-import { buildTestProps } from './story/props'
 import { AudioEngine } from './audio/engine'
 import { Director } from './director/director'
+import { Narrative } from './story/narrative'
 
 // three-mesh-bvh integration (tech brief: BVH per chunk, accelerated raycasts everywhere)
 THREE.BufferGeometry.prototype.computeBoundsTree = computeBoundsTree
@@ -54,10 +54,21 @@ async function boot(): Promise<void> {
   const debug = new DebugHud(renderer)
   const interact = new InteractSystem()
   const notes = new NoteOverlay()
-  const props = buildTestProps(scene, interact, notes)
 
   const audio = new AudioEngine()
   const director = new Director({ world, lights, audio, player })
+  const narrative = new Narrative({
+    scene,
+    world,
+    player,
+    interact,
+    notesOverlay: notes,
+    audio,
+    director,
+    hud,
+    post,
+    input,
+  })
 
   overlay.addEventListener('click', () => {
     input.requestLock()
@@ -65,8 +76,12 @@ async function boot(): Promise<void> {
   })
   input.onLockChange = (locked) => {
     overlay.classList.toggle('hidden', locked)
-    if (locked) hud.show()
-    else hud.hide()
+    if (locked) {
+      hud.show()
+      narrative.begin()
+    } else if (!narrative.ended) {
+      hud.hide()
+    }
   }
 
   window.addEventListener('resize', () => {
@@ -94,6 +109,7 @@ async function boot(): Promise<void> {
     notes,
     audio,
     director,
+    narrative,
     THREE,
     autopilot: false,
   }
@@ -102,10 +118,11 @@ async function boot(): Promise<void> {
     const active = input.locked || devHooks.autopilot
     if (active) {
       const justClosedNote = notes.update(input)
-      player.frozen = notes.reading
+      narrative.update(dt)
+      player.frozen = notes.reading || narrative.tapePaused || narrative.cinematic
       const colliders = world
         .collidersNear(player.position.x, player.position.z)
-        .concat(props.colliders)
+        .concat(narrative.colliders)
       player.update(dt, input, colliders)
       interact.update(camera, input, !notes.reading && !justClosedNote)
       hud.update(dt)
@@ -139,7 +156,8 @@ async function boot(): Promise<void> {
     world.update(player.position.x, player.position.z)
     lights.update(world, player.position.x, player.position.z, time)
     debug.update(dt, player.position)
-    post.composer.render(dt)
+    // "pausing the tape" freezes the frame; the world keeps making sound
+    if (!narrative.tapePaused) post.composer.render(dt)
   })
 
   loop.start()
