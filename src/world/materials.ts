@@ -544,6 +544,57 @@ export function getFloorArrowMaterial(): THREE.MeshStandardMaterial {
   return floorArrowMat
 }
 
+/** The tally by the red room. 74 marks. Never referenced. Never explained. */
+let tally74Mat: THREE.MeshStandardMaterial | null = null
+export function getTally74Material(): THREE.MeshStandardMaterial {
+  if (tally74Mat) return tally74Mat
+  const c = document.createElement('canvas')
+  c.width = 512
+  c.height = 320
+  const ctx = c.getContext('2d')!
+  ctx.lineCap = 'round'
+  ctx.strokeStyle = 'rgba(46, 38, 28, 0.6)'
+  let s = 74747
+  const rnd = (): number => {
+    s = (s * 16807) % 2147483647
+    return s / 2147483647
+  }
+  let drawn = 0
+  for (let row = 0; row < 3 && drawn < 74; row++) {
+    for (let g = 0; g < 5 && drawn < 74; g++) {
+      const gx = 30 + g * 96
+      const gy = 56 + row * 96 + (rnd() - 0.5) * 10
+      const n = Math.min(5, 74 - drawn)
+      ctx.lineWidth = 4
+      for (let i = 0; i < Math.min(n, 4); i++) {
+        ctx.beginPath()
+        ctx.moveTo(gx + i * 14 + (rnd() - 0.5) * 3, gy + (rnd() - 0.5) * 4)
+        ctx.lineTo(gx + i * 14 + (rnd() - 0.5) * 3, gy + 52 + (rnd() - 0.5) * 4)
+        ctx.stroke()
+        drawn++
+      }
+      if (n === 5) {
+        ctx.beginPath()
+        ctx.moveTo(gx - 7, gy + 46)
+        ctx.lineTo(gx + 52, gy + 8)
+        ctx.stroke()
+        drawn++
+      }
+    }
+  }
+  const tex = new THREE.CanvasTexture(c)
+  tex.colorSpace = THREE.SRGBColorSpace
+  tally74Mat = new THREE.MeshStandardMaterial({
+    map: tex,
+    transparent: true,
+    depthWrite: false,
+    roughness: 1,
+    polygonOffset: true,
+    polygonOffsetFactor: -1,
+  })
+  return tally74Mat
+}
+
 /** Wet bare footprint, glossy-dark on the carpet. They stop at a wall. */
 let footprintMat: THREE.MeshStandardMaterial | null = null
 export function getFootprintMaterial(): THREE.MeshStandardMaterial {

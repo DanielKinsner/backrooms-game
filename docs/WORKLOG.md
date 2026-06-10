@@ -196,6 +196,21 @@ Validated headless: phone/dial-tone/hangup, Manila suppression
 in→out→gone lifecycle, footprints placement, both artifacts firing,
 loom + Shepard clean; zero console errors.
 
+## 2026-06-10 — session 7 (the red room)
+
+One set piece, once per run, at ~540 m: a dim red doorway far ahead in
+the fog (the CRI grade renders its red dead-brown — physics, not
+styling). Approach: the hum bends, tape interference climbs. At 9 m
+the tape tears, and when the frame settles there is only wall — the
+chunk re-seeds; the room was never there. Beside where it stood, a
+chalk tally stays on the wall. It reads 74. Canon: red rooms "must be
+avoided entirely"; the game makes avoidance mandatory. Verified
+headless (place → approach → vanish, zero errors); deployed.
+
+Remaining deferred (diminishing returns, specs in session-4 notes):
+P.T. loop wing via salt-pinning, found photographs, beat-pool
+illegibility, blackout ZONE region.
+
 ### Original backlog (now resolved except as noted)
 1. **Chalk arrows** — notes 1 & 7 reference arrows on walls; they don't exist
    visually yet. Canvas-chalk decals on walls along a lying guidance path. HIGH.

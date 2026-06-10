@@ -1,7 +1,7 @@
 import * as THREE from 'three'
 import { TRAIL_NOTES, TRAIL_NOTE_6_AFTER, FINAL_NOTE, ENDING_LINES, INTRO_LINES } from './notes'
 import { ManilaRoom } from './manila'
-import { getFootprintMaterial } from '../world/materials'
+import { getFootprintMaterial, getTally74Material } from '../world/materials'
 import type { ChunkManager } from '../world/manager'
 import type { PlayerController } from '../player/controller'
 import type { InteractSystem, NoteOverlay } from '../player/interact'
@@ -189,6 +189,12 @@ export class Narrative {
       this.footprintsDone = this.placeFootprints()
     }
 
+    // THE RED ROOM (canon: "must be avoided entirely" — so the maze makes
+    // avoidance mandatory). A dim red doorway, far ahead. At 9 m the tape
+    // tears, and when the frame settles there is only wall. Beside where
+    // it stood: a chalk tally. It reads 74.
+    this.stepRedRoom()
+
     // IMPOSSIBLE ARTIFACTS (post-meta-beat, max two, minutes apart): the
     // tape operates outside its own parameters. nobody will agree on these.
     if (this.metaBeatDone && this.artifactsFired < 2) {
@@ -297,6 +303,80 @@ export class Narrative {
     return false
   }
 
+  private stepRedRoom(): void {
+    const { player, post, audio } = this.ctx
+
+    // place once, deep in act 2, well ahead in the fog
+    if (!this.redRoomDone && !this.redRoom && this.walked > 540) {
+      const spot = this.findFloorSpot(24, 30)
+      if (spot) this.placeRedRoom(spot)
+      return
+    }
+    if (!this.redRoom || !this.redRoomAt) return
+
+    const d = Math.hypot(
+      player.position.x - this.redRoomAt.x,
+      player.position.z - this.redRoomAt.z,
+    )
+    if (d < 14) {
+      // canonical approach effects: claustrophobia via the lens, not UI
+      audio.setHumDetune(-15)
+      post.vhs.interference = Math.max(post.vhs.interference, (14 - d) / 14)
+    }
+    if (d < 9) {
+      // the tape fails. the room was never there. the tally stays.
+      post.vhs.trackingSurge(1)
+      audio.setHumDetune(0)
+      audio.playUi('glitch', 0.35)
+      this.ctx.scene.remove(this.redRoom)
+      this.redRoom.traverse((o) => {
+        if (o instanceof THREE.Mesh) o.geometry.dispose()
+      })
+      this.redRoom = null
+      this.redRoomDone = true
+      const [cx, cz] = this.ctx.world.chunkOf(this.redRoomAt.x, this.redRoomAt.z)
+      this.ctx.world.bumpSalt(cx, cz)
+      this.ctx.director.setDreadFloor(0.6)
+    }
+  }
+
+  private placeRedRoom(spot: THREE.Vector3): void {
+    const { scene, player } = this.ctx
+    const group = new THREE.Group()
+    const yaw = Math.atan2(player.position.x - spot.x, player.position.z - spot.z)
+    group.position.copy(spot)
+    group.rotation.y = yaw
+
+    const jambMat = new THREE.MeshStandardMaterial({ color: 0x3a3026, roughness: 0.9 })
+    const mkBox = (w: number, h: number, dd: number, x: number, y: number, z: number): void => {
+      const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, dd), jambMat)
+      m.position.set(x, y, z)
+      group.add(m)
+    }
+    mkBox(0.16, 2.2, 0.2, -0.62, 1.1, 0)
+    mkBox(0.16, 2.2, 0.2, 0.62, 1.1, 0)
+    mkBox(1.4, 0.18, 0.2, 0, 2.19, 0)
+    // the room beyond: a red that the CRI grade renders dead and wrong
+    const void_ = new THREE.Mesh(
+      new THREE.PlaneGeometry(1.08, 2.1),
+      new THREE.MeshBasicMaterial({ color: 0x4a0a0a, fog: false }),
+    )
+    void_.position.set(0, 1.05, -0.06)
+    group.add(void_)
+    const glow = new THREE.PointLight(0xff2020, 1.4, 6, 1.8)
+    glow.position.set(0, 1.3, 0.5)
+    group.add(glow)
+
+    // the tally, beside the door. 14 groups and four strokes. count them.
+    const tally = new THREE.Mesh(new THREE.PlaneGeometry(0.8, 0.5), getTally74Material())
+    tally.position.set(1.25, 1.3, 0.02)
+    group.add(tally)
+
+    scene.add(group)
+    this.redRoom = group
+    this.redRoomAt = spot.clone()
+  }
+
   // ---- notes ----
 
   private placeNotes(): void {
@@ -385,6 +465,11 @@ export class Narrative {
 
   private blackoutScheduled = false
   private broadcastFired = false
+
+  // ---- the red room: seen once, reached never ----
+  private redRoom: THREE.Group | null = null
+  private redRoomDone = false
+  private redRoomAt: THREE.Vector3 | null = null
 
   // ---- wave 3: kenopsia + impossible artifacts + the Manila Room ----
   private manila: ManilaRoom | null = null
