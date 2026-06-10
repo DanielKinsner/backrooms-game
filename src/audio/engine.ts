@@ -44,6 +44,8 @@ export interface AudioState {
   moving: boolean
   /** Player is standing in/near an openDamp zone — schedules drips. */
   dampNear: boolean
+  /** Anomalous wing under the player's feet (null = plain Level 0). */
+  zone: 'pool' | 'playground' | 'garage' | null
 }
 
 export type SpatialName = 'impact' | 'doorOpen' | 'doorClose' | 'creak' | 'glitch'
@@ -87,6 +89,14 @@ export class AudioEngine {
   private lastFwdZ = -1
 
   private dripTimer = 5
+
+  // Poolrooms: lapping-water bed (fades in over the threshold), plus the
+  // signature scare — a distant splash with no visible source, 50-160 s apart.
+  private lapGain: GainNode | null = null
+  private lapLfoDepths: GainNode[] = []
+  private splashTimer = 40
+  // Garage: a metal door slams somewhere it shouldn't, every 45-110 s.
+  private slamTimer = 30
 
   // Wow & flutter: the ambience bus runs through a modulated delay. Act 1 the
   // tape is nearly stable; by act 3 the 120 Hz hum audibly bends. (Research:
@@ -245,6 +255,39 @@ export class AudioEngine {
       this.startAtmosCycle()
     }
 
+    // Lapping water: looped noise pushed through a low bandpass, gain riding
+    // two incommensurate slow LFOs. Silent until the player crosses into
+    // the poolrooms; the hum thins there on its own (fewer fixtures).
+    const lapSrc = ctx.createBufferSource()
+    lapSrc.buffer = noiseBuf
+    lapSrc.loop = true
+    lapSrc.playbackRate.value = 0.4
+    const lapBp = ctx.createBiquadFilter()
+    lapBp.type = 'bandpass'
+    lapBp.frequency.value = 240
+    lapBp.Q.value = 0.6
+    this.lapGain = ctx.createGain()
+    this.lapGain.gain.value = 0
+    const lapDepth1 = ctx.createGain()
+    lapDepth1.gain.value = 0
+    const lapLfo1 = ctx.createOscillator()
+    lapLfo1.frequency.value = 0.13
+    lapLfo1.connect(lapDepth1)
+    const lapDepth2 = ctx.createGain()
+    lapDepth2.gain.value = 0
+    const lapLfo2 = ctx.createOscillator()
+    lapLfo2.frequency.value = 0.071
+    lapLfo2.connect(lapDepth2)
+    const lapVca = ctx.createGain()
+    lapVca.gain.value = 1
+    lapDepth1.connect(lapVca.gain)
+    lapDepth2.connect(lapVca.gain)
+    lapSrc.connect(lapBp).connect(lapVca).connect(this.lapGain).connect(this.ambienceBus)
+    lapSrc.start()
+    lapLfo1.start()
+    lapLfo2.start()
+    this.lapLfoDepths = [lapDepth1, lapDepth2]
+
     // Reuse the noise buffer for breath (same low-passed pink-ish character).
     this.foley = new Foley(ctx, this.sfxBus, this.samples.footstepsCloth, noiseBuf)
     this.foley.onStep = (sprinting: boolean): void => {
@@ -299,16 +342,81 @@ export class AudioEngine {
       }
     }
 
-    // Drips: only near damp carpet. Sparse — a drip every 5-13 s, never two
-    // from the same place. (Where is the water coming from? Don't ask.)
-    if (state.dampNear && !this.silenced) {
+    // Drips: near damp carpet, and constantly (faster) in the poolrooms.
+    // Sparse — never two from the same place. (Where is the water coming
+    // from? Don't ask.)
+    const inPool = state.zone === 'pool'
+    if ((state.dampNear || inPool) && !this.silenced) {
       this.dripTimer -= dt
       if (this.dripTimer <= 0) {
-        this.dripTimer = 5 + Math.random() * 8
+        this.dripTimer = inPool ? 3 + Math.random() * 6 : 5 + Math.random() * 8
         const a = Math.random() * Math.PI * 2
         const d = 3 + Math.random() * 7
         this.playDrip(state.px + Math.cos(a) * d, state.pz + Math.sin(a) * d)
       }
+    }
+
+    // Zone character: footstep surface, the lapping bed, the schedulers.
+    if (this.foley) {
+      this.foley.surface =
+        state.zone === 'pool' ? 'tile' : state.zone === 'garage' ? 'concrete' : 'carpet'
+    }
+    if (this.lapGain) {
+      const t = this.ctx.currentTime
+      const target = inPool && !this.silenced ? 0.16 : 0
+      this.lapGain.gain.setTargetAtTime(target, t, 1.4)
+      for (const d of this.lapLfoDepths) d.gain.setTargetAtTime(target > 0 ? 0.35 : 0, t, 1.4)
+    }
+    if (inPool && !this.silenced) {
+      this.splashTimer -= dt
+      if (this.splashTimer <= 0) {
+        this.splashTimer = 50 + Math.random() * 110
+        const a = Math.random() * Math.PI * 2
+        const d = 14 + Math.random() * 14
+        this.playSplash(state.px + Math.cos(a) * d, state.pz + Math.sin(a) * d)
+      }
+    }
+    if (state.zone === 'garage' && !this.silenced) {
+      this.slamTimer -= dt
+      if (this.slamTimer <= 0) {
+        this.slamTimer = 45 + Math.random() * 65
+        const a = Math.random() * Math.PI * 2
+        const d = 26 + Math.random() * 22
+        this.playSpatial('doorClose', state.px + Math.cos(a) * d, 1.2, state.pz + Math.sin(a) * d, {
+          gain: 0.45,
+        })
+      }
+    }
+  }
+
+  /** The poolrooms' signature scare: a splash with no swimmer. */
+  playSplash(x: number, z: number): void {
+    if (!this.ctx || !this.noiseBuf) return
+    const ctx = this.ctx
+    const t = ctx.currentTime
+    const src = ctx.createBufferSource()
+    src.buffer = this.noiseBuf
+    src.playbackRate.value = 0.9
+    const bp = ctx.createBiquadFilter()
+    bp.type = 'bandpass'
+    bp.Q.value = 0.8
+    bp.frequency.setValueAtTime(900, t)
+    bp.frequency.exponentialRampToValueAtTime(280, t + 0.4)
+    const vca = ctx.createGain()
+    vca.gain.setValueAtTime(0, t)
+    vca.gain.linearRampToValueAtTime(0.5, t + 0.025)
+    vca.gain.setTargetAtTime(0, t + 0.06, 0.12)
+    const panner = this.makePanner(x, 0.0, z, 50)
+    src.connect(bp).connect(vca).connect(panner).connect(this.presenceBus)
+    src.start(t)
+    src.stop(t + 0.8)
+    this.cleanup(src, [bp, vca, panner], t + 0.9)
+    // the after-drips of whatever went under
+    for (const dt0 of [0.5, 0.9, 1.4]) {
+      window.setTimeout(
+        () => this.playDrip(x + (Math.random() - 0.5) * 2, z + (Math.random() - 0.5) * 2),
+        dt0 * 1000,
+      )
     }
   }
 

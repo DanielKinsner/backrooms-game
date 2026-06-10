@@ -7,7 +7,7 @@ import { Loop } from './core/loop'
 import { DebugHud } from './core/debug'
 import { PlayerController } from './player/controller'
 import { ChunkManager } from './world/manager'
-import { CELL } from './world/gen'
+import { CELL, zoneOf } from './world/gen'
 import { initWorldMaterials } from './world/materials'
 import { FixturePool } from './world/lighting'
 import { createPostStack } from './fx/post'
@@ -107,7 +107,8 @@ async function boot(): Promise<void> {
   })
 
   const _fwd = new THREE.Vector3()
-  const _fixtures: Array<{ x: number; z: number; seed: number }> = []
+  const _fogTarget = new THREE.Color()
+  const _fixtures: Array<{ x: number; z: number; y?: number; seed: number }> = []
 
   // Automation can run the sim without pointer lock (headless playthroughs).
   const devHooks = {
@@ -127,6 +128,7 @@ async function boot(): Promise<void> {
     narrative,
     dust,
     THREE,
+    zoneOf,
     autopilot: false,
     loop: null as Loop | null,
   }
@@ -154,6 +156,11 @@ async function boot(): Promise<void> {
         for (const f of chunk.fixtures) _fixtures.push(f)
       }
       const horizSpeed = Math.hypot(player.velocity.x, player.velocity.z)
+      const zoneHere = world.zoneAt(player.position.x, player.position.z)
+      const wingHere =
+        zoneHere === 'pool' || zoneHere === 'playground' || zoneHere === 'garage'
+          ? zoneHere
+          : null
       audio.update(dt, {
         px: camera.position.x,
         py: camera.position.y,
@@ -170,13 +177,25 @@ async function boot(): Promise<void> {
         sprinting: player.sprinting,
         crouching: player.crouching,
         moving: horizSpeed > 0.05,
-        dampNear: world.zoneAt(player.position.x, player.position.z) === 'openDamp',
+        dampNear: zoneHere === 'openDamp',
+        zone: wingHere,
       })
 
       // dread leans on the frame: fog thickens, the lens tightens, the
       // vignette deepens — all at sub-perceptual rates (30s+ time constants)
       const fog = scene.fog as THREE.FogExp2
       fog.density = 0.034 * (1 + director.dread * 0.2 + Math.sin(time * 0.21) * 0.02)
+      // each wing breathes its own air (humid blue-white / dark / sodium-grey)
+      const fogTarget =
+        wingHere === 'pool'
+          ? 0x8aa49a
+          : wingHere === 'playground'
+            ? 0x4c4636
+            : wingHere === 'garage'
+              ? 0x6b675c
+              : FOG_COLOR
+      _fogTarget.setHex(fogTarget)
+      lights.fogBase.lerp(_fogTarget, 1 - Math.exp(-0.5 * dt))
       player.dreadNarrow += (director.dread - player.dreadNarrow) * (1 - Math.exp(-0.033 * dt))
       post.vignette.darkness = 0.52 + director.dread * 0.1
 

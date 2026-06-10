@@ -37,7 +37,8 @@ export class FixturePool {
   private readonly baseEmissive: number
   private readonly hemi: THREE.HemisphereLight | null
   private readonly scene: THREE.Scene
-  private fogColor = new THREE.Color()
+  /** Target fog color — main steers this per zone; blackout crushes it. */
+  readonly fogBase = new THREE.Color()
   private fogDark = new THREE.Color(0x050503)
 
   // --- peripheral dim: one fixture misbehaves only where you aren't looking ---
@@ -51,7 +52,7 @@ export class FixturePool {
     this.scene = scene
     this.hemi = hemi ?? null
     this.baseEmissive = worldMaterials.fixture.emissiveIntensity
-    if (scene.fog && 'color' in scene.fog) this.fogColor.copy(scene.fog.color)
+    if (scene.fog && 'color' in scene.fog) this.fogBase.copy(scene.fog.color)
     for (let i = 0; i < POOL_SIZE; i++) {
       const l = new THREE.RectAreaLight(TUBE_COLOR, 0, 1.2, 0.6)
       l.visible = false
@@ -129,20 +130,22 @@ export class FixturePool {
     if (glowMaterials.pool) glowMaterials.pool.opacity = 0.05 * blackLevel
     if (this.hemi) this.hemi.intensity = 0.72 * Math.max(blackLevel, 0.04)
     if (this.scene.fog instanceof THREE.FogExp2) {
-      this.scene.fog.color.lerpColors(this.fogDark, this.fogColor, Math.max(blackLevel, 0.04))
+      this.scene.fog.color.lerpColors(this.fogDark, this.fogBase, Math.max(blackLevel, 0.04))
       if (this.scene.background instanceof THREE.Color) {
         this.scene.background.copy(this.scene.fog.color)
       }
     }
 
-    type Near = { x: number; z: number; seed: number; d: number }
+    type Near = { x: number; z: number; y: number; seed: number; d: number; sodium: boolean }
     const near: Near[] = []
     for (const chunk of world.all()) {
+      const sodium = chunk.zone === 'garage'
       for (const f of chunk.fixtures) {
         const dx = f.x - px
         const dz = f.z - pz
         const d = dx * dx + dz * dz
-        if (d < RANGE * RANGE) near.push({ x: f.x, z: f.z, seed: f.seed, d })
+        if (d < RANGE * RANGE)
+          near.push({ x: f.x, z: f.z, y: f.y ?? CEIL_H - 0.03, seed: f.seed, d, sodium })
       }
     }
     near.sort((a, b) => a.d - b.d)
@@ -156,9 +159,11 @@ export class FixturePool {
         continue
       }
       l.visible = true
-      l.position.set(f.x, CEIL_H - 0.06, f.z)
+      l.position.set(f.x, f.y - 0.03, f.z)
       l.lookAt(f.x, 0, f.z)
-      let v = 6.5 * this.flicker(f.seed, time) * this.master * blackLevel
+      // garage tubes run sodium-warm and weaker (half the bank is dying)
+      l.color.setHex(f.sodium ? 0xffb45a : TUBE_COLOR)
+      let v = (f.sodium ? 4.6 : 6.5) * this.flicker(f.seed, time) * this.master * blackLevel
       if (dimActive && Math.abs(f.x - this.dimX) < 0.5 && Math.abs(f.z - this.dimZ) < 0.5) {
         v *= 0.35
       }

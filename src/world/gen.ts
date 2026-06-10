@@ -19,13 +19,40 @@ export const WALL_T = 0.2
 
 const WORLD_SEED = 0x20020612 // the tape is dated June 12 2002
 
-export type ZoneKind = 'pillarHall' | 'corridors' | 'rooms' | 'openDamp'
+export type ZoneKind =
+  | 'pillarHall'
+  | 'corridors'
+  | 'rooms'
+  | 'openDamp'
+  // anomalous wings — the maze bleeds into other places (liminal canon):
+  | 'pool' // the Poolrooms: tile, still water, the smell of nothing
+  | 'playground' // Level Fun =) — a playplace with no children in it
+  | 'garage' // the parking garage at 3 AM, forever
+
+/** True for the rare bleed-through regions. */
+export function isWing(zone: ZoneKind): boolean {
+  return zone === 'pool' || zone === 'playground' || zone === 'garage'
+}
 
 export interface Fixture {
   x: number // world meters
   z: number
+  /** Mount height (zone ceilings differ — the garage presses down on you). */
+  y: number
   rotated: boolean
   seed: number // drives flicker personality + hum detune later
+}
+
+/** Garage clearance: lower than the maze. The camera feels it immediately. */
+export const GARAGE_CEIL = 2.35
+
+export function ceilHeightFor(zone: ZoneKind): number {
+  return zone === 'garage' ? GARAGE_CEIL : CEIL_H
+}
+
+/** Public deterministic zone query (mesh uses it for neighbor seams). */
+export function zoneOf(cx: number, cz: number): ZoneKind {
+  return pickZone(cx, cz)
 }
 
 export interface Pillar {
@@ -44,6 +71,27 @@ export interface Furniture {
   rot: 0 | 1
 }
 
+/** Sunken pool basin, world-space rect. Water sits at WATER_Y. */
+export interface Basin {
+  x: number // min corner
+  z: number
+  w: number
+  d: number
+}
+
+export type StructureKind = 'tower' | 'ballpit' | 'slide'
+
+export interface PlayStructure {
+  kind: StructureKind
+  x: number
+  z: number
+  rot: number // radians, y-axis
+  color: number // index into the plastic palette
+}
+
+export const BASIN_DEPTH = 0.7
+export const WATER_Y = -0.26
+
 export interface ChunkData {
   cx: number
   cz: number
@@ -55,6 +103,8 @@ export interface ChunkData {
   pillars: Pillar[]
   fixtures: Fixture[]
   furniture: Furniture[]
+  basins: Basin[]
+  structures: PlayStructure[]
 }
 
 function mix(a: number, b: number, c: number): number {
@@ -80,6 +130,14 @@ function boundaryWall(line: number, cell: number, vertical: boolean): boolean {
 
 function pickZone(cx: number, cz: number): ZoneKind {
   if (cx === 0 && cz === 0) return 'pillarHall' // spawn chunk is an open hall
+  // Anomalous wings: coherent 2x2-chunk regions (~38 m), only far from spawn.
+  // Rare on purpose — finding one should feel like the maze made a mistake.
+  if (Math.max(Math.abs(cx), Math.abs(cz)) >= 3) {
+    const r2 = mix(Math.floor(cx / 2), Math.floor(cz / 2), 8888)
+    if (r2 < 0.025) return 'pool'
+    if (r2 < 0.047) return 'playground'
+    if (r2 < 0.068) return 'garage'
+  }
   const r = mix(cx, cz, 977)
   if (r < 0.34) return 'corridors'
   if (r < 0.64) return 'pillarHall'
@@ -92,6 +150,9 @@ const FIXTURE_DENSITY: Record<ZoneKind, number> = {
   corridors: 0.24,
   rooms: 0.22,
   openDamp: 0.13,
+  pool: 0.1, // dimmer. the water makes up for it by being wrong
+  playground: 0.07, // dimmest. the colors shouldn't be in shadow, but they are
+  garage: 0.13,
 }
 
 export function generateChunk(cx: number, cz: number, salt = 0): ChunkData {
@@ -145,21 +206,90 @@ export function generateChunk(cx: number, cz: number, salt = 0): ChunkData {
               size: 0.6,
             })
       break
+
+    case 'pool':
+      // Open tiled hall; fat tiled columns; the basin comes below.
+      for (let i = 0; i < CHUNK_CELLS; i++)
+        for (let j = 0; j < CHUNK_CELLS; j++)
+          if (rng.chance(0.05))
+            pillars.push({
+              x: (cx * CHUNK_CELLS + i + 0.5) * CELL,
+              z: (cz * CHUNK_CELLS + j + 0.5) * CELL,
+              size: rng.range(0.7, 0.95),
+            })
+      break
+
+    case 'playground':
+      // Wide open. The structures are the architecture.
+      for (let i = 0; i < CHUNK_CELLS; i++)
+        for (let j = 0; j < CHUNK_CELLS; j++)
+          if (rng.chance(0.02))
+            pillars.push({
+              x: (cx * CHUNK_CELLS + i + 0.5) * CELL,
+              z: (cz * CHUNK_CELLS + j + 0.5) * CELL,
+              size: 0.5,
+            })
+      break
+
+    case 'garage': {
+      // The grid is the point: columns on a strict 3-cell module, forever.
+      for (let i = 1; i < CHUNK_CELLS; i += 3) {
+        for (let j = 1; j < CHUNK_CELLS; j += 3) {
+          pillars.push({
+            x: (cx * CHUNK_CELLS + i) * CELL,
+            z: (cz * CHUNK_CELLS + j) * CELL,
+            size: 0.55,
+          })
+        }
+      }
+      break
+    }
   }
 
   ensureConnectivity(cx, cz, vWalls, hWalls)
 
-  // Fixtures: non-gridded (canon) — per-cell chance with jitter.
+  // Pool basins: one sunken pool per chunk, organic-ish inset, never touching
+  // the chunk border (the floor strips around it must exist).
+  const basins: Basin[] = []
+  if (zone === 'pool') {
+    const w = rng.range(7, 11)
+    const d = rng.range(6, 10)
+    const x0w = cx * CHUNK_SIZE + rng.range(2.6, CHUNK_SIZE - w - 2.6)
+    const z0w = cz * CHUNK_SIZE + rng.range(2.6, CHUNK_SIZE - d - 2.6)
+    basins.push({ x: x0w, z: z0w, w, d })
+  }
+
+  // Play structures: towers to mantle onto, a ball pit, a dead slide.
+  const structures: PlayStructure[] = []
+  if (zone === 'playground') {
+    const kinds: StructureKind[] = ['tower', 'ballpit', 'slide']
+    const n = rng.int(2, 4)
+    for (let k = 0; k < n; k++) {
+      structures.push({
+        kind: kinds[k % kinds.length],
+        x: cx * CHUNK_SIZE + rng.range(3.5, CHUNK_SIZE - 3.5),
+        z: cz * CHUNK_SIZE + rng.range(3.5, CHUNK_SIZE - 3.5),
+        rot: rng.range(0, Math.PI * 2),
+        color: rng.int(0, 3),
+      })
+    }
+  }
+
+  // Fixtures: non-gridded (canon) — per-cell chance with jitter. Garage
+  // fixtures snap to the column module instead (the rhythm is the level).
   const fixtures: Fixture[] = []
   const density = FIXTURE_DENSITY[zone]
+  const fixtureY = ceilHeightFor(zone) - 0.03
   for (let i = 0; i < CHUNK_CELLS; i++) {
     for (let j = 0; j < CHUNK_CELLS; j++) {
       const r = mix(cx * CHUNK_CELLS + i, cz * CHUNK_CELLS + j, 5501 + salt * 17)
       if (r < density) {
+        const grid = zone === 'garage'
         fixtures.push({
-          x: (cx * CHUNK_CELLS + i + 0.5) * CELL + (mix(i, j, 61) - 0.5) * 0.9,
-          z: (cz * CHUNK_CELLS + j + 0.5) * CELL + (mix(i, j, 62) - 0.5) * 0.9,
-          rotated: mix(i, j, 63) < 0.5,
+          x: (cx * CHUNK_CELLS + i + 0.5) * CELL + (grid ? 0 : (mix(i, j, 61) - 0.5) * 0.9),
+          z: (cz * CHUNK_CELLS + j + 0.5) * CELL + (grid ? 0 : (mix(i, j, 62) - 0.5) * 0.9),
+          y: fixtureY,
+          rotated: grid ? true : mix(i, j, 63) < 0.5,
           seed: r / density,
         })
       }
@@ -174,6 +304,9 @@ export function generateChunk(cx: number, cz: number, salt = 0): ChunkData {
     openDamp: 0.025,
     pillarHall: 0.018,
     corridors: 0,
+    pool: 0,
+    playground: 0,
+    garage: 0,
   }
   const furnChance = FURN_CHANCE[zone]
   if (furnChance > 0) {
@@ -195,7 +328,7 @@ export function generateChunk(cx: number, cz: number, salt = 0): ChunkData {
     }
   }
 
-  return { cx, cz, zone, vWalls, hWalls, pillars, fixtures, furniture }
+  return { cx, cz, zone, vWalls, hWalls, pillars, fixtures, furniture, basins, structures }
 }
 
 /** Recursive BSP room splitting; every split wall gets 1–2 door gaps. */

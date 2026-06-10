@@ -246,6 +246,8 @@ export class Narrative {
       const d = this.rng.range(minD, maxD)
       const x = p.x - Math.sin(yaw) * d + Math.cos(a) * this.rng.range(-2, 2)
       const z = p.z - Math.cos(yaw) * d + Math.sin(a) * this.rng.range(-2, 2)
+      // paper doesn't survive the poolrooms (and would float over basins)
+      if (this.ctx.world.zoneAt(x, z) === 'pool') continue
       const colliders = this.ctx.world.collidersNear(x, z)
       if (colliders.length === 0) continue
       // horizontal clearance ≥0.4 in 4 directions at knee height

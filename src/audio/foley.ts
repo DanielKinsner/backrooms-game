@@ -17,9 +17,14 @@ const STRIDE_WALK = 0.72 // meters between footfalls
 const STRIDE_SPRINT = 0.95
 const STRIDE_CROUCH = 0.55
 
-const STEP_PITCH_DOWN = 0.85 // carpet feels heavier than the source recording
 const STEP_PITCH_JITTER = 0.07 // ±7%
-const STEP_LP_HZ = 1600
+
+export type Surface = 'carpet' | 'tile' | 'concrete'
+
+/** Tile slaps bright and wet; concrete cracks mid; carpet swallows. */
+const SURFACE_LP: Record<Surface, number> = { carpet: 1600, tile: 3400, concrete: 2400 }
+const SURFACE_PITCH: Record<Surface, number> = { carpet: 0.85, tile: 1.0, concrete: 0.92 }
+const SURFACE_VOL: Record<Surface, number> = { carpet: 1.0, tile: 1.25, concrete: 1.15 }
 
 const STEP_VOL_WALK = 0.45
 const STEP_VOL_SPRINT = 0.62
@@ -37,6 +42,9 @@ export class Foley {
 
   /** Fired on every footfall — the director's mimic learns the gait from this. */
   onStep: ((sprinting: boolean) => void) | null = null
+
+  /** What the player is walking on (zone-driven; engine sets it). */
+  surface: Surface = 'carpet'
 
   // --- Breath ---
   private readonly breathGain: GainNode
@@ -150,17 +158,17 @@ export class Foley {
     const src = ctx.createBufferSource()
     src.buffer = buf
     const jitter = 1 + (Math.random() * 2 - 1) * STEP_PITCH_JITTER
-    src.playbackRate.value = STEP_PITCH_DOWN * jitter
+    src.playbackRate.value = SURFACE_PITCH[this.surface] * jitter
 
     const lp = ctx.createBiquadFilter()
     lp.type = 'lowpass'
-    lp.frequency.value = STEP_LP_HZ
+    lp.frequency.value = SURFACE_LP[this.surface]
     lp.Q.value = 0.4
 
     const vca = ctx.createGain()
     const baseVol = crouching ? STEP_VOL_CROUCH : sprinting ? STEP_VOL_SPRINT : STEP_VOL_WALK
     // micro-jitter so identical samples don't feel mechanical
-    vca.gain.value = baseVol * (0.92 + Math.random() * 0.16)
+    vca.gain.value = baseVol * SURFACE_VOL[this.surface] * (0.92 + Math.random() * 0.16)
 
     // Subtle stereo width: L and R get the same audio with ±delay each.
     // Use a ChannelMerger to assemble a stereo signal from two mono delays.

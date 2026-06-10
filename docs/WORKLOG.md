@@ -123,6 +123,44 @@ insert), looming telegraph ramps + Shepard descent finale, blackout
 ZONE region (ankle-deep fluid), found photographs (pre-memory + the
 impossible angle), beat-pool illegibility (6 authored, 3 per seed).
 
+## 2026-06-10 — session 5 (anomalous wings: the maze bleeds)
+
+Dan supplied liminal reference images (poolrooms, dead playplace,
+garage); a 3-agent research sweep pulled the canon. Three rare
+2×2-chunk wing regions now generate ≥3 chunks from spawn (~2.5%/2.2%/
+2.1% of coarse regions): the maze bleeds into other places.
+
+- **The Poolrooms** (Level 37 / Jared Pike): pristine white tile on
+  every surface (the exact inverse of Level 0's filth — canon says the
+  sterility IS the wrongness), sunken basins with crystal blue-green
+  water + the navy waterline band, humid blue-white fog shift, lapping
+  bed + constant drips + the signature sourceless distant splash
+  (50-160 s), wet tile footsteps, no scrawls (nothing marks the tile),
+  no paper notes (research: canon = NO entities; the space is the
+  entity).
+- **Level Fun =)** (dead playplace): canonical orange walls + near-black
+  carnival carpet that eats the light, dimmest fixtures, plastic towers
+  (mantleable), ball pits (static instanced balls, 6 colors), dead tube
+  slides with collider proxies, red balloon clusters still inflated,
+  crayon scrawls ("party this way =)", "FUN =)", "have some cake =)")
+  and a taped crayon drawing — count the stick figures.
+- **The garage**: strict 3-cell column module, lowered 2.35 m ceiling
+  (soffit seams against full-height neighbors), concrete + oil blooms +
+  faded bay paint, sodium-warm dying fixtures (light AND emissive),
+  LEVEL 3 stenciled on every column everywhere, floor arrows pointing
+  into walls, a metal door slamming somewhere every 45-110 s, concrete
+  footsteps, grey fog shift.
+
+Tech: zone-aware AudioState (surface switching, lap bed, splash/slam
+schedulers), per-fixture mount heights through gen→mesh→lighting→hum,
+fogBase ownership moved into FixturePool (blackout-compatible per-zone
+tint lerp), basin floor-hole geometry with BVH colliders (mantle out of
+the water works), playbot budget 22 min for the longer arc.
+
+Validated: tsc+build clean; full organic E2E (all 9 notes, descent
+unlock, ending trigger + slates) with ZERO console errors; all three
+wings located and screenshotted (docs/shots/wing-*.jpg); pushed live.
+
 ### Original backlog (now resolved except as noted)
 1. **Chalk arrows** — notes 1 & 7 reference arrows on walls; they don't exist
    visually yet. Canvas-chalk decals on walls along a lying guidance path. HIGH.

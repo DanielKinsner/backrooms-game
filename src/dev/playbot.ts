@@ -87,8 +87,9 @@ export class Playbot {
       this.stop()
       return
     }
-    if (this.t > 15 * 60) {
-      this.events.push('TIMEOUT 15min')
+    if (this.t > 22 * 60) {
+      // 9 trail notes at up to 950 m — a clean organic run needs the budget
+      this.events.push('TIMEOUT 22min')
       this.stop()
       return
     }

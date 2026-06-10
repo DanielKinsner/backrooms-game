@@ -24,6 +24,8 @@ const PERSONALITY_CENTS = 3 // ± per-fixture sub-oscillator detune from seed
 export interface HumFixture {
   x: number
   z: number
+  /** Mount height (garage ceilings are lower). */
+  y?: number
   seed: number
 }
 
@@ -356,7 +358,7 @@ export class HumLayer {
       slot.distance = s.d
       slot.voice.fixtureId = s.key
       slot.voice.setPersonalityFromSeed(fx.seed)
-      slot.voice.position(this.ctx, fx.x, this.ceilY, fx.z, false)
+      slot.voice.position(this.ctx, fx.x, fx.y ?? this.ceilY, fx.z, false)
       slot.voice.applyDetune(this.ctx, this.globalDetune + this.dreadDetune)
       slot.voice.fadeIn(this.ctx, this.nearVoiceGain, 0.7)
     })
@@ -375,7 +377,7 @@ export class HumLayer {
         worst.fixtureKey = candidate.key
         worst.distance = candidate.d
         worst.voice.setPersonalityFromSeed(candidate.f.seed)
-        worst.voice.position(this.ctx, candidate.f.x, this.ceilY, candidate.f.z, false)
+        worst.voice.position(this.ctx, candidate.f.x, candidate.f.y ?? this.ceilY, candidate.f.z, false)
         worst.voice.applyDetune(this.ctx, this.globalDetune + this.dreadDetune)
         worst.voice.fadeIn(this.ctx, this.nearVoiceGain, 0.7)
       }

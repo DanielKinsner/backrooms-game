@@ -249,6 +249,356 @@ export function getGlowMaterials(): { halo: THREE.MeshBasicMaterial; pool: THREE
   return { halo: glowMaterials.halo, pool: glowMaterials.pool! }
 }
 
+// ---------------------------------------------------------------------------
+// Anomalous wing materials (the maze bleeds into other places).
+// All synthesized — zero downloads. Poolrooms tile, dead-playplace carnival
+// carpet + plastics, parking-garage concrete.
+// ---------------------------------------------------------------------------
+
+function seededRnd(seed: number): () => number {
+  let s = seed
+  return () => {
+    s = (s * 16807) % 2147483647
+    return s / 2147483647
+  }
+}
+
+/**
+ * Poolrooms tile (canon: "eerily pristine, all identical, without a single
+ * hint of damage"). The wrongness is sterile perfection — the exact inverse
+ * of Level 0's filth. Small white squares, warm-grey grout, NO grime.
+ */
+function makeTileTexture(): THREE.CanvasTexture {
+  const S = 512 // 1.2 m world period → ~7.5 cm tiles
+  const c = document.createElement('canvas')
+  c.width = c.height = S
+  const ctx = c.getContext('2d')!
+  const rnd = seededRnd(91)
+  ctx.fillStyle = '#b7b4a8' // grout
+  ctx.fillRect(0, 0, S, S)
+  const T = 32
+  for (let y = 0; y < S; y += T) {
+    for (let x = 0; x < S; x += T) {
+      const v = 238 + Math.floor(rnd() * 12) - 6
+      ctx.fillStyle = `rgb(${v - 2}, ${v}, ${v - 5})`
+      ctx.fillRect(x + 1, y + 1, T - 2, T - 2)
+    }
+  }
+  return new THREE.CanvasTexture(c)
+}
+
+/** Carnival carpet: near-black navy with confetti shapes. Eats light. */
+function makeCarnivalTexture(): THREE.CanvasTexture {
+  const S = 512 // 2 m period
+  const c = document.createElement('canvas')
+  c.width = c.height = S
+  const ctx = c.getContext('2d')!
+  const rnd = seededRnd(777)
+  ctx.fillStyle = '#11131f'
+  ctx.fillRect(0, 0, S, S)
+  const colors = ['#b5303c', '#2f6fb8', '#c8b22a', '#3d9c4a', '#8a3fa0', '#c46a22']
+  for (let i = 0; i < 240; i++) {
+    const x = rnd() * S
+    const y = rnd() * S
+    const col = colors[Math.floor(rnd() * colors.length)]
+    ctx.strokeStyle = col
+    ctx.fillStyle = col
+    ctx.globalAlpha = 0.5 + rnd() * 0.3
+    ctx.lineWidth = 2 + rnd() * 2
+    const kind = rnd()
+    ctx.save()
+    ctx.translate(x, y)
+    ctx.rotate(rnd() * Math.PI * 2)
+    if (kind < 0.33) {
+      // squiggle
+      ctx.beginPath()
+      ctx.moveTo(-8, 0)
+      ctx.quadraticCurveTo(-3, -7, 0, 0)
+      ctx.quadraticCurveTo(3, 7, 8, 0)
+      ctx.stroke()
+    } else if (kind < 0.6) {
+      // triangle / shape outline
+      ctx.beginPath()
+      ctx.moveTo(0, -6)
+      ctx.lineTo(6, 5)
+      ctx.lineTo(-6, 5)
+      ctx.closePath()
+      ctx.stroke()
+    } else if (kind < 0.85) {
+      // star burst
+      for (let a = 0; a < 5; a++) {
+        ctx.beginPath()
+        ctx.moveTo(0, 0)
+        ctx.lineTo(Math.cos((a / 5) * Math.PI * 2) * 7, Math.sin((a / 5) * Math.PI * 2) * 7)
+        ctx.stroke()
+      }
+    } else {
+      ctx.beginPath()
+      ctx.arc(0, 0, 4, 0, Math.PI * 2)
+      ctx.fill()
+    }
+    ctx.restore()
+  }
+  ctx.globalAlpha = 1
+  return new THREE.CanvasTexture(c)
+}
+
+/** Garage concrete: gray, tire scuff, oil blooms, faded yellow guidance. */
+function makeConcreteTexture(withLines: boolean): THREE.CanvasTexture {
+  const S = 512 // 3.2 m period
+  const c = document.createElement('canvas')
+  c.width = c.height = S
+  const ctx = c.getContext('2d')!
+  const rnd = seededRnd(withLines ? 404 : 405)
+  ctx.fillStyle = '#8d8a83'
+  ctx.fillRect(0, 0, S, S)
+  // aggregate noise
+  for (let i = 0; i < 2600; i++) {
+    const v = 120 + Math.floor(rnd() * 50)
+    ctx.fillStyle = `rgba(${v}, ${v}, ${v - 4}, 0.16)`
+    ctx.fillRect(rnd() * S, rnd() * S, 1 + rnd() * 2, 1 + rnd() * 2)
+  }
+  ctx.globalCompositeOperation = 'multiply'
+  stainPass(ctx, S, 6, 'rgba(70, 68, 60, 0.30)') // oil blooms
+  stainPass(ctx, S, 4, 'rgba(95, 90, 78, 0.22)')
+  if (withLines) {
+    ctx.globalCompositeOperation = 'source-over'
+    ctx.globalAlpha = 0.5
+    ctx.fillStyle = '#b8a23a' // faded parking-bay paint
+    ctx.fillRect(0, 248, S, 14)
+    ctx.globalAlpha = 1
+  }
+  return new THREE.CanvasTexture(c)
+}
+
+/** Crayon drawing decal (the playground had visitors. small ones.) */
+let crayonMat: THREE.MeshStandardMaterial | null = null
+export function getCrayonMaterial(): THREE.MeshStandardMaterial {
+  if (crayonMat) return crayonMat
+  const S = 256
+  const c = document.createElement('canvas')
+  c.width = c.height = S
+  const ctx = c.getContext('2d')!
+  const rnd = seededRnd(2002)
+  ctx.lineCap = 'round'
+  // taped paper
+  ctx.fillStyle = 'rgba(228, 222, 205, 0.92)'
+  ctx.fillRect(48, 38, 160, 190)
+  ctx.fillStyle = 'rgba(200, 200, 190, 0.5)'
+  ctx.fillRect(110, 28, 40, 18)
+  // a house, a sun, three stick figures — one drawn much taller than the rest
+  ctx.strokeStyle = '#b5303c'
+  ctx.lineWidth = 4
+  ctx.strokeRect(70, 150, 50, 50)
+  ctx.beginPath()
+  ctx.moveTo(70, 150)
+  ctx.lineTo(95, 124)
+  ctx.lineTo(120, 150)
+  ctx.stroke()
+  ctx.strokeStyle = '#c8b22a'
+  ctx.beginPath()
+  ctx.arc(186, 70, 16, 0, Math.PI * 2)
+  ctx.stroke()
+  const stick = (x: number, y: number, h: number, color: string): void => {
+    ctx.strokeStyle = color
+    ctx.beginPath()
+    ctx.arc(x, y - h, 7, 0, Math.PI * 2)
+    ctx.moveTo(x, y - h + 7)
+    ctx.lineTo(x, y - h * 0.25)
+    ctx.moveTo(x - 9, y - h * 0.62)
+    ctx.lineTo(x + 9, y - h * 0.62)
+    ctx.moveTo(x, y - h * 0.25)
+    ctx.lineTo(x - 8, y)
+    ctx.moveTo(x, y - h * 0.25)
+    ctx.lineTo(x + 8, y)
+    ctx.stroke()
+  }
+  stick(150, 215, 38, '#2f6fb8')
+  stick(172, 215, 34, '#3d9c4a')
+  stick(196, 215, 86, '#3a3a3a') // it was at the party too
+  // the =)
+  ctx.strokeStyle = '#3a3a3a'
+  ctx.lineWidth = 3
+  ctx.font = '26px monospace'
+  ctx.fillStyle = '#3a3a3a'
+  ctx.fillText('=)', 76, 222)
+  void rnd
+  const tex = new THREE.CanvasTexture(c)
+  tex.colorSpace = THREE.SRGBColorSpace
+  crayonMat = new THREE.MeshStandardMaterial({
+    map: tex,
+    transparent: true,
+    depthWrite: false,
+    roughness: 1,
+    polygonOffset: true,
+    polygonOffsetFactor: -1,
+  })
+  return crayonMat
+}
+
+export const wingMaterials = {
+  tile: new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.22, metalness: 0.02 }),
+  tileFloor: new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.2, metalness: 0.02 }),
+  /** Canon: blue-green, crystal-clear, lukewarm. The only color in the room. */
+  water: new THREE.MeshStandardMaterial({
+    color: 0x4fae9f,
+    roughness: 0.06,
+    metalness: 0.0,
+    transparent: true,
+    opacity: 0.66,
+  }),
+  /** The single navy accent band at the waterline (Pike's renders). */
+  navyBand: new THREE.MeshStandardMaterial({ color: 0x1d3a6e, roughness: 0.25 }),
+  carnival: new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.95 }),
+  /** Level Fun =) — the canonical orange. Slightly glossy, like it's new. */
+  playWall: new THREE.MeshStandardMaterial({ color: 0xd08a30, roughness: 0.7 }),
+  concrete: new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.9 }),
+  concretePlain: new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.92 }),
+  /** Garage tubes run warmer — half-dead sodium contamination. */
+  fixtureSodium: new THREE.MeshStandardMaterial({
+    color: 0xd8cab0,
+    emissive: 0xffb45a,
+    emissiveIntensity: 1.7,
+  }),
+  plastics: [
+    new THREE.MeshStandardMaterial({ color: 0xb5303c, roughness: 0.38, side: THREE.DoubleSide }),
+    new THREE.MeshStandardMaterial({ color: 0x2f6fb8, roughness: 0.38, side: THREE.DoubleSide }),
+    new THREE.MeshStandardMaterial({ color: 0xc8b22a, roughness: 0.38, side: THREE.DoubleSide }),
+    new THREE.MeshStandardMaterial({ color: 0x3d9c4a, roughness: 0.38, side: THREE.DoubleSide }),
+  ],
+  balloon: new THREE.MeshStandardMaterial({ color: 0xc02430, roughness: 0.25 }),
+  ballColors: [0xb5303c, 0x2f6fb8, 0xc8b22a, 0x3d9c4a, 0xc46a22, 0xffffff],
+}
+
+/** Crayon party scrawls — every text scrap in the wing ends with =) */
+let playScrawls: THREE.MeshStandardMaterial[] | null = null
+export function getPlayScrawlMaterials(): THREE.MeshStandardMaterial[] {
+  if (playScrawls) return playScrawls
+  const make = (lines: string[], color: string): THREE.MeshStandardMaterial => {
+    const S = 256
+    const c = document.createElement('canvas')
+    c.width = c.height = S
+    const ctx = c.getContext('2d')!
+    ctx.font = '34px "Comic Sans MS", cursive'
+    for (let pass = 0; pass < 2; pass++) {
+      ctx.fillStyle = color.replace('A)', `${0.4 + pass * 0.3})`)
+      lines.forEach((ln, i) => ctx.fillText(ln, 22 + pass * 2, 96 + i * 52 + pass))
+    }
+    const tex = new THREE.CanvasTexture(c)
+    tex.colorSpace = THREE.SRGBColorSpace
+    return new THREE.MeshStandardMaterial({
+      map: tex,
+      transparent: true,
+      depthWrite: false,
+      roughness: 1,
+      polygonOffset: true,
+      polygonOffsetFactor: -1,
+    })
+  }
+  playScrawls = [
+    make(['party this', 'way =)'], 'rgba(180, 40, 50, A)'),
+    make(['FUN =)'], 'rgba(40, 80, 180, A)'),
+    make(['have some', 'cake =)'], 'rgba(50, 130, 60, A)'),
+  ]
+  return playScrawls
+}
+
+/** Faded yellow floor arrow (garage wayfinding that lies). */
+let floorArrowMat: THREE.MeshStandardMaterial | null = null
+export function getFloorArrowMaterial(): THREE.MeshStandardMaterial {
+  if (floorArrowMat) return floorArrowMat
+  const S = 256
+  const c = document.createElement('canvas')
+  c.width = c.height = S
+  const ctx = c.getContext('2d')!
+  ctx.strokeStyle = 'rgba(184, 162, 58, 0.55)'
+  ctx.fillStyle = 'rgba(184, 162, 58, 0.55)'
+  ctx.lineWidth = 26
+  ctx.beginPath()
+  ctx.moveTo(128, 215)
+  ctx.lineTo(128, 95)
+  ctx.stroke()
+  ctx.beginPath()
+  ctx.moveTo(128, 30)
+  ctx.lineTo(180, 105)
+  ctx.lineTo(76, 105)
+  ctx.closePath()
+  ctx.fill()
+  // wear: punch holes out of the paint
+  const rnd = seededRnd(33)
+  ctx.globalCompositeOperation = 'destination-out'
+  for (let i = 0; i < 260; i++) {
+    ctx.fillStyle = `rgba(0,0,0,${0.3 + rnd() * 0.5})`
+    ctx.fillRect(rnd() * S, rnd() * S, 2 + rnd() * 7, 2 + rnd() * 5)
+  }
+  const tex = new THREE.CanvasTexture(c)
+  tex.colorSpace = THREE.SRGBColorSpace
+  floorArrowMat = new THREE.MeshStandardMaterial({
+    map: tex,
+    transparent: true,
+    depthWrite: false,
+    roughness: 1,
+    polygonOffset: true,
+    polygonOffsetFactor: -1,
+  })
+  return floorArrowMat
+}
+
+/** Column stencil. Every column says LEVEL 3. Every single one. */
+let stencilMat: THREE.MeshStandardMaterial | null = null
+export function getStencilMaterial(): THREE.MeshStandardMaterial {
+  if (stencilMat) return stencilMat
+  const c = document.createElement('canvas')
+  c.width = 256
+  c.height = 128
+  const ctx = c.getContext('2d')!
+  ctx.font = 'bold 52px monospace'
+  ctx.fillStyle = 'rgba(196, 170, 60, 0.75)'
+  ctx.fillText('LEVEL', 38, 56)
+  ctx.fillText('3', 105, 112)
+  const tex = new THREE.CanvasTexture(c)
+  tex.colorSpace = THREE.SRGBColorSpace
+  stencilMat = new THREE.MeshStandardMaterial({
+    map: tex,
+    transparent: true,
+    depthWrite: false,
+    roughness: 1,
+    polygonOffset: true,
+    polygonOffsetFactor: -1,
+  })
+  return stencilMat
+}
+
+let wingsInitialized = false
+/** Lazy: only pay the canvas cost if a wing actually streams in. */
+export function initWingMaterials(): void {
+  if (wingsInitialized) return
+  wingsInitialized = true
+  const tileTex = makeTileTexture()
+  setupTiling(tileTex, 1.2, true)
+  wingMaterials.tile.map = tileTex
+  const tileFloorTex = makeTileTexture()
+  setupTiling(tileFloorTex, 1.6, true)
+  wingMaterials.tileFloor.map = tileFloorTex
+  const carnTex = makeCarnivalTexture()
+  setupTiling(carnTex, 2.0, true)
+  wingMaterials.carnival.map = carnTex
+  const concTex = makeConcreteTexture(true)
+  setupTiling(concTex, 3.2, true)
+  wingMaterials.concrete.map = concTex
+  const concPlainTex = makeConcreteTexture(false)
+  setupTiling(concPlainTex, 3.2, true)
+  wingMaterials.concretePlain.map = concPlainTex
+  for (const m of [
+    wingMaterials.tile,
+    wingMaterials.tileFloor,
+    wingMaterials.carnival,
+    wingMaterials.concrete,
+    wingMaterials.concretePlain,
+  ])
+    m.needsUpdate = true
+}
+
 const CARPET_PERIOD = 1.2
 const WALL_PERIOD = 2.4
 const CEILING_PERIOD = 3.6
