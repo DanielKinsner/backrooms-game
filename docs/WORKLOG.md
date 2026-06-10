@@ -161,6 +161,41 @@ Validated: tsc+build clean; full organic E2E (all 9 notes, descent
 unlock, ending trigger + slates) with ZERO console errors; all three
 wings located and screenshotted (docs/shots/wing-*.jpg); pushed live.
 
+## 2026-06-10 — session 6 (wave 3: mercy, kenopsia, the tape misbehaving)
+
+- **The Manila Room** — canon's sole resting anomaly, placed once at
+  ~350 m: clean manila walls, its own steady warm light (the only
+  honest light in the building), D.'s most human note ("you're doing
+  fine."), his thermos (DRINK → "still warm."). Inside: the director
+  holds its breath, the hum softens to a purr, dread drains. Leave,
+  and the tape flinches; get 45 m away and the room stops existing.
+  Never findable again.
+- **The phone** (kenopsia, ~210 m): a desk phone off the hook playing
+  the 2002 US dial tone (350+440 Hz). HANG UP and the line clicks dead.
+  Walk away and the line gives up on its own.
+- **Wet footprints** (~460 m): a barefoot trail, glossy on the carpet,
+  walking straight into a wall. It stops there.
+- **Impossible artifacts** (post-meta-beat, exactly two, minutes
+  apart): the tape counter visibly runs BACKWARD for two seconds while
+  gameplay continues; later, the frame freezes for 1.5 s while every
+  sound carries on. The medium violating its own parameters — players
+  will argue these happened at all.
+- **Looming telegraph**: before the near-miss, the sub-bed swells over
+  30 s, holds, then recedes — "it passed; it's behind you now" — and
+  THEN the silhouette crosses. (Neuhoff auditory looming bias.)
+- **Shepard descent**: under the ending's black, six octave-spaced
+  sines glide down forever without arriving. No key, no melody — the
+  no-music pillar survives on a technicality.
+
+CI fixed: Windows npm 11 had pruned platform-optional deps from the
+lockfile (lightningcss/rolldown bindings) → npm ci failed on Linux
+only. Lockfile regenerated complete; CI pins npm 11.6.2 (the npm that
+validates must match the npm that wrote it).
+
+Validated headless: phone/dial-tone/hangup, Manila suppression
+in→out→gone lifecycle, footprints placement, both artifacts firing,
+loom + Shepard clean; zero console errors.
+
 ### Original backlog (now resolved except as noted)
 1. **Chalk arrows** — notes 1 & 7 reference arrows on walls; they don't exist
    visually yet. Canvas-chalk decals on walls along a lying guidance path. HIGH.
