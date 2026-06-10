@@ -17,5 +17,8 @@ export function createRenderer(canvas: HTMLCanvasElement): THREE.WebGLRenderer {
   renderer.toneMappingExposure = 1.12
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
   renderer.setSize(window.innerWidth, window.innerHeight)
+  // EffectComposer makes many render calls per frame; accumulate stats across
+  // the whole frame and reset manually in the loop so the debug HUD tells the truth.
+  renderer.info.autoReset = false
   return renderer
 }

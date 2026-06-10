@@ -157,7 +157,10 @@ async function boot(): Promise<void> {
     lights.update(world, player.position.x, player.position.z, time)
     debug.update(dt, player.position)
     // "pausing the tape" freezes the frame; the world keeps making sound
-    if (!narrative.tapePaused) post.composer.render(dt)
+    if (!narrative.tapePaused) {
+      renderer.info.reset()
+      post.composer.render(dt)
+    }
   })
 
   loop.start()

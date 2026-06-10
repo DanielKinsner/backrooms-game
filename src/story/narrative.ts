@@ -69,7 +69,7 @@ export class Narrative {
     this.slateEl = mkDiv('story-slate', 'hidden')
     this.fadeEl = mkDiv('story-fade', '')
     this.pauseEl = mkDiv('tape-pause', 'hidden')
-    this.pauseEl.textContent = 'PAUSE ❚❚'
+    this.pauseEl.textContent = 'PAUSE ||'
     this.lastPos.copy(ctx.player.position)
   }
 
@@ -135,6 +135,36 @@ export class Narrative {
     if (!spot) return
     const idx = this.placedNotes++
     this.spawnNote(spot, NOTES[idx])
+    // D. left supplies sometimes. the bottles smell like almonds.
+    if (idx >= 1 && this.rng.chance(0.45)) {
+      this.spawnBottle(spot.x + this.rng.range(-0.9, 0.9), spot.z + this.rng.range(-0.9, 0.9))
+    }
+  }
+
+  private spawnBottle(x: number, z: number): void {
+    const bottle = new THREE.Group()
+    const body = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.045, 0.05, 0.24, 12),
+      new THREE.MeshStandardMaterial({ color: 0xcfd8d2, roughness: 0.35, metalness: 0.05 }),
+    )
+    body.position.y = 0.12
+    const cap = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.022, 0.022, 0.035, 10),
+      new THREE.MeshStandardMaterial({ color: 0x8a8378, roughness: 0.6 }),
+    )
+    cap.position.y = 0.26
+    bottle.add(body, cap)
+    bottle.position.set(x, 0, z)
+    this.ctx.scene.add(bottle)
+    this.ctx.interact.add({
+      object: body,
+      label: 'DRINK',
+      onUse: () => {
+        this.ctx.scene.remove(bottle)
+        this.ctx.director.relief(0.18)
+        this.ctx.player.steadyT = 40
+      },
+    })
   }
 
   private spawnNote(at: THREE.Vector3, text: string): void {

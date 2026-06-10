@@ -34,6 +34,16 @@ export interface Pillar {
   size: number
 }
 
+export type FurnitureKind = 'desk' | 'boxes' | 'cabinet'
+
+export interface Furniture {
+  kind: FurnitureKind
+  x: number
+  z: number
+  /** 0 or 1: long axis along x or z. */
+  rot: 0 | 1
+}
+
 export interface ChunkData {
   cx: number
   cz: number
@@ -44,6 +54,7 @@ export interface ChunkData {
   hWalls: boolean[][]
   pillars: Pillar[]
   fixtures: Fixture[]
+  furniture: Furniture[]
 }
 
 function mix(a: number, b: number, c: number): number {
@@ -155,7 +166,36 @@ export function generateChunk(cx: number, cz: number, salt = 0): ChunkData {
     }
   }
 
-  return { cx, cz, zone, vWalls, hWalls, pillars, fixtures }
+  // Abandoned furniture: mantle targets and kenopsia anchors. Sparse —
+  // a lone desk in an empty hall is worth ten cluttered ones.
+  const furniture: Furniture[] = []
+  const FURN_CHANCE: Record<ZoneKind, number> = {
+    rooms: 0.05,
+    openDamp: 0.025,
+    pillarHall: 0.018,
+    corridors: 0,
+  }
+  const furnChance = FURN_CHANCE[zone]
+  if (furnChance > 0) {
+    for (let i = 0; i < CHUNK_CELLS; i++) {
+      for (let j = 0; j < CHUNK_CELLS; j++) {
+        if (cx === 0 && cz === 0 && i >= 2 && i <= 5 && j >= 2 && j <= 5) continue
+        const r = mix(cx * CHUNK_CELLS + i, cz * CHUNK_CELLS + j, 8101 + salt * 23)
+        if (r < furnChance) {
+          const kinds: FurnitureKind[] =
+            zone === 'rooms' ? ['desk', 'boxes', 'cabinet'] : ['desk', 'boxes']
+          furniture.push({
+            kind: kinds[Math.floor((r / furnChance) * kinds.length)],
+            x: (cx * CHUNK_CELLS + i + 0.5) * CELL + (mix(i, j, 91) - 0.5) * 0.7,
+            z: (cz * CHUNK_CELLS + j + 0.5) * CELL + (mix(i, j, 92) - 0.5) * 0.7,
+            rot: mix(i, j, 93) < 0.5 ? 0 : 1,
+          })
+        }
+      }
+    }
+  }
+
+  return { cx, cz, zone, vWalls, hWalls, pillars, fixtures, furniture }
 }
 
 /** Recursive BSP room splitting; every split wall gets 1–2 door gaps. */

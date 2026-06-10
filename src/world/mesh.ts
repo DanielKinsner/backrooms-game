@@ -1,6 +1,6 @@
 import * as THREE from 'three'
 import { CELL, CHUNK_CELLS, CHUNK_SIZE, CEIL_H, type ChunkData } from './gen'
-import { worldMaterials } from './materials'
+import { worldMaterials, getChalkArrowMaterial } from './materials'
 
 /**
  * Chunk geometry. All vertices are baked in WORLD space and UVs are the
@@ -76,12 +76,23 @@ export interface BuiltChunk {
 }
 
 const fixtureGeo = new THREE.BoxGeometry(1.2, 0.06, 0.6)
+const arrowGeo = new THREE.PlaneGeometry(0.55, 0.55)
+
+interface WallFace {
+  x: number
+  z: number
+  nx: number
+  nz: number
+  len: number
+}
 
 export function buildChunkMeshes(data: ChunkData): BuiltChunk {
   const wall = new GeoAccum()
   const trim = new GeoAccum()
   const floor = new GeoAccum()
   const ceil = new GeoAccum()
+  const furn = new GeoAccum()
+  const wallFaces: WallFace[] = []
 
   const x0 = data.cx * CHUNK_SIZE
   const z0 = data.cz * CHUNK_SIZE
@@ -100,6 +111,8 @@ export function buildChunkMeshes(data: ChunkData): BuiltChunk {
       wall.addFace(_o.set(bx, 0, az + WALL_HALF_T), NZ, WALL_HALF_T * 2, PY, CEIL_H, PX) // east cap
       trim.addFace(_o.set(bx, 0, az - WALL_HALF_T - TRIM_OUT), NX, len, PY, TRIM_H, NZ)
       trim.addFace(_o.set(ax, 0, az + WALL_HALF_T + TRIM_OUT), PX, len, PY, TRIM_H, PZ)
+      wallFaces.push({ x: (ax + bx) / 2, z: az - WALL_HALF_T, nx: 0, nz: -1, len })
+      wallFaces.push({ x: (ax + bx) / 2, z: az + WALL_HALF_T, nx: 0, nz: 1, len })
     } else {
       const len = bz - az
       wall.addFace(_o.set(ax + WALL_HALF_T, 0, bz), NZ, len, PY, CEIL_H, PX) // +x face
@@ -108,7 +121,20 @@ export function buildChunkMeshes(data: ChunkData): BuiltChunk {
       wall.addFace(_o.set(ax - WALL_HALF_T, 0, bz), PX, WALL_HALF_T * 2, PY, CEIL_H, PZ) // north cap
       trim.addFace(_o.set(ax + WALL_HALF_T + TRIM_OUT, 0, bz), NZ, len, PY, TRIM_H, PX)
       trim.addFace(_o.set(ax - WALL_HALF_T - TRIM_OUT, 0, az), PZ, len, PY, TRIM_H, NX)
+      wallFaces.push({ x: ax + WALL_HALF_T, z: (az + bz) / 2, nx: 1, nz: 0, len })
+      wallFaces.push({ x: ax - WALL_HALF_T, z: (az + bz) / 2, nx: -1, nz: 0, len })
     }
+  }
+
+  /** Axis-aligned box with top face (mantle target), into visual + collider accums. */
+  const addFurnBox = (x: number, z: number, w: number, h: number, d: number, y0 = 0): void => {
+    const hw = w / 2
+    const hd = d / 2
+    furn.addFace(_o.set(x + hw, y0, z + hd), NZ, d, PY, h, PX)
+    furn.addFace(_o.set(x - hw, y0, z - hd), PZ, d, PY, h, NX)
+    furn.addFace(_o.set(x - hw, y0, z + hd), PX, w, PY, h, PZ)
+    furn.addFace(_o.set(x + hw, y0, z - hd), NX, w, PY, h, NZ)
+    furn.addFace(_o.set(x - hw, y0 + h, z + hd), PX, w, NZ, d, PY)
   }
 
   // Vertical wall runs (lines 0..7; line 8 belongs to the next chunk east)
@@ -156,13 +182,52 @@ export function buildChunkMeshes(data: ChunkData): BuiltChunk {
     trim.addFace(_o.set(p.x + t, 0, p.z - t), NX, p.size + TRIM_OUT * 2, PY, TRIM_H, NZ)
   }
 
+  // Furniture
+  for (const f of data.furniture) {
+    if (f.kind === 'desk') {
+      const [w, d] = f.rot === 0 ? [1.5, 0.7] : [0.7, 1.5]
+      addFurnBox(f.x, f.z, w, 0.06, d, 0.68) // top slab
+      const [pw, pd] = f.rot === 0 ? [0.06, 0.66] : [0.66, 0.06]
+      const off = f.rot === 0 ? [w / 2 - 0.05, 0] : [0, d / 2 - 0.05]
+      addFurnBox(f.x - off[0], f.z - off[1], pw, 0.68, pd)
+      addFurnBox(f.x + off[0], f.z + off[1], pw, 0.68, pd)
+    } else if (f.kind === 'boxes') {
+      addFurnBox(f.x, f.z, 0.56, 0.5, 0.56)
+      addFurnBox(f.x + 0.04, f.z - 0.03, 0.5, 0.48, 0.5, 0.5)
+    } else {
+      const [w, d] = f.rot === 0 ? [0.9, 0.5] : [0.5, 0.9]
+      addFurnBox(f.x, f.z, w, 1.32, d)
+    }
+  }
+
   const group = new THREE.Group()
+
+  // Chalk arrows on long wall faces — seeded, sparse, directionally honest
+  // about nothing (DESIGN.md §11: "DON'T trust the arrows").
+  let arrows = 0
+  const h = (i: number): number => {
+    const v = Math.sin(data.cx * 127.1 + data.cz * 311.7 + i * 74.7) * 43758.5453
+    return v - Math.floor(v)
+  }
+  for (let i = 0; i < wallFaces.length && arrows < 2; i++) {
+    const f = wallFaces[i]
+    if (f.len < 4.7 || h(i) > 0.13) continue
+    arrows++
+    const m = new THREE.Mesh(arrowGeo, getChalkArrowMaterial())
+    m.position.set(f.x + f.nx * 0.012, 1.25 + h(i + 50) * 0.3, f.z + f.nz * 0.012)
+    const ry = f.nx === 1 ? Math.PI / 2 : f.nx === -1 ? -Math.PI / 2 : f.nz === 1 ? 0 : Math.PI
+    const dir = [0, Math.PI / 2, Math.PI, -Math.PI / 2][Math.floor(h(i + 90) * 4)]
+    m.rotation.set(0, ry, dir + (h(i + 130) - 0.5) * 0.3, 'YXZ')
+    group.add(m)
+  }
+
   const geos: THREE.BufferGeometry[] = []
   const buckets: Array<[GeoAccum, THREE.Material]> = [
     [floor, worldMaterials.carpet],
     [ceil, worldMaterials.ceiling],
     [wall, worldMaterials.wall],
     [trim, worldMaterials.trim],
+    [furn, worldMaterials.furniture],
   ]
   for (const [accum, mat] of buckets) {
     const geo = accum.build()
@@ -188,11 +253,11 @@ export function buildChunkMeshes(data: ChunkData): BuiltChunk {
 
   // Collider: walls + pillars + floor + ceiling merged into one BVH mesh.
   const colliderAccum = new GeoAccum()
-  colliderAccum.pos = floor.pos.concat(ceil.pos, wall.pos)
-  colliderAccum.norm = floor.norm.concat(ceil.norm, wall.norm)
-  colliderAccum.uv = floor.uv.concat(ceil.uv, wall.uv)
+  colliderAccum.pos = floor.pos.concat(ceil.pos, wall.pos, furn.pos)
+  colliderAccum.norm = floor.norm.concat(ceil.norm, wall.norm, furn.norm)
+  colliderAccum.uv = floor.uv.concat(ceil.uv, wall.uv, furn.uv)
   let offset = 0
-  for (const part of [floor, ceil, wall]) {
+  for (const part of [floor, ceil, wall, furn]) {
     for (const i of part.idx) colliderAccum.idx.push(i + offset)
     offset += part.pos.length / 3
   }

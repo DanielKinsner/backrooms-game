@@ -57,6 +57,8 @@ export class PlayerController {
   private mantleTo = new THREE.Vector3()
   /** External freeze (reading a note, cutscenes). Camera still syncs. */
   frozen = false
+  /** Seconds of almond-water steadiness left (damps handheld sway). */
+  steadyT = 0
 
   constructor(private readonly camera: THREE.PerspectiveCamera) {}
 
@@ -79,6 +81,7 @@ export class PlayerController {
 
   update(dt: number, input: Input, colliders: THREE.Mesh[]): void {
     this.time += dt
+    this.steadyT = Math.max(0, this.steadyT - dt)
 
     if (this.frozen) {
       input.consumeMouse()
@@ -308,12 +311,13 @@ export class PlayerController {
     this.bobAmount += (energy - this.bobAmount) * 0.12
     this.bobPhase += horizSpeed * 0.55 * (1 / 60)
 
-    const bob = this.bobAmount
+    const calm = this.steadyT > 0 ? 0.4 : 1 // almond water steadies the hands
+    const bob = this.bobAmount * calm
     const bobY = Math.sin(this.bobPhase * 2) * 0.028 * bob
     const bobX = Math.sin(this.bobPhase) * 0.016 * bob
-    const roll = Math.sin(this.bobPhase) * 0.006 * bob + Math.sin(this.time * 0.23) * 0.0035
-    const swayYaw = Math.sin(this.time * 0.31) * 0.004
-    const swayPitch = Math.sin(this.time * 0.43) * 0.003
+    const roll = Math.sin(this.bobPhase) * 0.006 * bob + Math.sin(this.time * 0.23) * 0.0035 * calm
+    const swayYaw = Math.sin(this.time * 0.31) * 0.004 * calm
+    const swayPitch = Math.sin(this.time * 0.43) * 0.003 * calm
 
     this.camera.position.copy(this.position)
     this.camera.position.y += this.eyeHeight + bobY

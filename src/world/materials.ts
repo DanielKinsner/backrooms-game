@@ -18,6 +18,50 @@ export const worldMaterials = {
     emissive: 0xfff6dc,
     emissiveIntensity: 2.2,
   }),
+  furniture: new THREE.MeshStandardMaterial({ color: 0x4f4233, roughness: 0.8 }),
+}
+
+/**
+ * Chalk arrows (DESIGN.md §11): D. marked the walls. Some arrows are his.
+ * Some are older. The directions are seeded noise — the lying is emergent,
+ * and note 1 warned you.
+ */
+let chalkMat: THREE.MeshStandardMaterial | null = null
+export function getChalkArrowMaterial(): THREE.MeshStandardMaterial {
+  if (chalkMat) return chalkMat
+  const S = 256
+  const c = document.createElement('canvas')
+  c.width = c.height = S
+  const ctx = c.getContext('2d')!
+  ctx.strokeStyle = 'rgb(226, 219, 192)'
+  ctx.lineCap = 'round'
+  let s = 777
+  const rnd = (): number => {
+    s = (s * 16807) % 2147483647
+    return s / 2147483647
+  }
+  // three jittered passes read as chalk over wallpaper texture
+  for (let pass = 0; pass < 3; pass++) {
+    ctx.lineWidth = 6 + rnd() * 5
+    ctx.globalAlpha = 0.3 + rnd() * 0.3
+    const j = (): number => (rnd() - 0.5) * 9
+    ctx.beginPath()
+    ctx.moveTo(42 + j(), 128 + j())
+    ctx.lineTo(198 + j(), 128 + j())
+    ctx.moveTo(148 + j(), 82 + j())
+    ctx.lineTo(204 + j(), 128 + j())
+    ctx.lineTo(148 + j(), 174 + j())
+    ctx.stroke()
+  }
+  const tex = new THREE.CanvasTexture(c)
+  tex.colorSpace = THREE.SRGBColorSpace
+  chalkMat = new THREE.MeshStandardMaterial({
+    map: tex,
+    transparent: true,
+    depthWrite: false,
+    roughness: 1,
+  })
+  return chalkMat
 }
 
 const CARPET_PERIOD = 1.2

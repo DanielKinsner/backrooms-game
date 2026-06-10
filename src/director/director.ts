@@ -210,6 +210,11 @@ export class Director {
   setDreadFloor(v: number): void {
     this.dread = Math.max(this.dread, v)
   }
+
+  /** Almond water: the only mercy in the building. */
+  relief(v: number): void {
+    this.dread = Math.max(0.05, this.dread - v)
+  }
 }
 
 const _v = new THREE.Vector3()
