@@ -68,7 +68,6 @@ export class AudioEngine {
   // Ambient texture (atmoseerie + ambient_horror) — runs as a slow swap-in/out
   // backdrop under the hum. Single voice; we pick a buffer on each fade.
   private atmosVoiceGain: GainNode | null = null
-  private atmosCycleTimer: ReturnType<typeof setTimeout> | null = null
   private currentAtmosTarget = 0.07
   private dread = 0
   private silenced = false
@@ -447,7 +446,7 @@ export class AudioEngine {
     const playNext = (): void => {
       if (!this.ctx || this.silenced) {
         // Re-arm later if silenced; once we restore, the cycle should resume.
-        this.atmosCycleTimer = window.setTimeout(playNext, 4000)
+        window.setTimeout(playNext, 4000)
         return
       }
       const c = this.ctx
@@ -479,13 +478,12 @@ export class AudioEngine {
           /* already disconnected */
         }
       }
-      // Track the current voice so silence()/dread can adjust it on the fly.
-      this.atmosVoiceSrc = src
+      // Track the current voice's gain so silence()/dread can adjust it on the fly.
       this.atmosVoiceGain = vca
 
       // Queue the next pick to start while this one is fading out (overlap = fadeOut).
       const next = Math.max(2, dur - fadeOut)
-      this.atmosCycleTimer = window.setTimeout(playNext, next * 1000)
+      window.setTimeout(playNext, next * 1000)
     }
     playNext()
   }

@@ -14,6 +14,8 @@ import { createPostStack } from './fx/post'
 import { CamcorderHud } from './ui/hud'
 import { InteractSystem, NoteOverlay } from './player/interact'
 import { buildTestProps } from './story/props'
+import { AudioEngine } from './audio/engine'
+import { Director } from './director/director'
 
 // three-mesh-bvh integration (tech brief: BVH per chunk, accelerated raycasts everywhere)
 THREE.BufferGeometry.prototype.computeBoundsTree = computeBoundsTree
@@ -54,7 +56,13 @@ async function boot(): Promise<void> {
   const notes = new NoteOverlay()
   const props = buildTestProps(scene, interact, notes)
 
-  overlay.addEventListener('click', () => input.requestLock())
+  const audio = new AudioEngine()
+  const director = new Director({ world, lights, audio, player })
+
+  overlay.addEventListener('click', () => {
+    input.requestLock()
+    void audio.init() // must live in the gesture handler (autoplay policy); idempotent
+  })
   input.onLockChange = (locked) => {
     overlay.classList.toggle('hidden', locked)
     if (locked) hud.show()
@@ -67,6 +75,9 @@ async function boot(): Promise<void> {
     renderer.setSize(window.innerWidth, window.innerHeight)
     post.setSize(window.innerWidth, window.innerHeight)
   })
+
+  const _fwd = new THREE.Vector3()
+  const _fixtures: Array<{ x: number; z: number; seed: number }> = []
 
   // Automation can run the sim without pointer lock (headless playthroughs).
   const devHooks = {
@@ -81,6 +92,8 @@ async function boot(): Promise<void> {
     hud,
     interact,
     notes,
+    audio,
+    director,
     THREE,
     autopilot: false,
   }
@@ -96,6 +109,31 @@ async function boot(): Promise<void> {
       player.update(dt, input, colliders)
       interact.update(camera, input, !notes.reading && !justClosedNote)
       hud.update(dt)
+      director.update(dt)
+
+      camera.getWorldDirection(_fwd)
+      _fixtures.length = 0
+      for (const chunk of world.all()) {
+        for (const f of chunk.fixtures) _fixtures.push(f)
+      }
+      const horizSpeed = Math.hypot(player.velocity.x, player.velocity.z)
+      audio.update(dt, {
+        px: camera.position.x,
+        py: camera.position.y,
+        pz: camera.position.z,
+        fwdX: _fwd.x,
+        fwdY: _fwd.y,
+        fwdZ: _fwd.z,
+        upX: 0,
+        upY: 1,
+        upZ: 0,
+        fixtures: _fixtures,
+        speed: horizSpeed,
+        onGround: player.onGround,
+        sprinting: player.sprinting,
+        crouching: player.crouching,
+        moving: horizSpeed > 0.05,
+      })
     }
     post.vhs.intensity = 1 + player.zoom * 0.55 // zoomed tape strains
     world.update(player.position.x, player.position.z)
