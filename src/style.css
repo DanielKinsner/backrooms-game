@@ -143,6 +143,63 @@ body {
   letter-spacing: 1px;
 }
 
+/* ---- interaction ---- */
+#interact-prompt {
+  position: fixed;
+  left: 50%;
+  bottom: 18%;
+  transform: translateX(-50%);
+  font-family: 'VT323', 'Courier New', monospace;
+  font-size: 24px;
+  letter-spacing: 2px;
+  color: rgba(235, 235, 225, 0.9);
+  text-shadow: 0 0 6px rgba(220, 220, 200, 0.5);
+  pointer-events: none;
+  z-index: 6;
+}
+
+#interact-prompt.hidden {
+  display: none;
+}
+
+#note-overlay {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(8, 7, 4, 0.72);
+  z-index: 8;
+}
+
+#note-overlay.hidden {
+  display: none;
+}
+
+.note-paper {
+  width: min(560px, 86vw);
+  background: linear-gradient(173deg, #d8cda8 0%, #cfc29a 55%, #c4b78d 100%);
+  box-shadow: 0 12px 60px rgba(0, 0, 0, 0.8), inset 0 0 60px rgba(120, 100, 50, 0.25);
+  padding: 46px 50px 30px;
+  transform: rotate(-1.6deg);
+}
+
+.note-text {
+  font-family: 'Special Elite', 'Courier New', monospace;
+  font-size: 21px;
+  line-height: 1.55;
+  color: #2c2418;
+  white-space: pre-wrap;
+}
+
+.note-hint {
+  margin-top: 28px;
+  font-family: 'VT323', monospace;
+  font-size: 16px;
+  color: rgba(44, 36, 24, 0.55);
+  text-align: right;
+}
+
 #debug-hud {
   position: fixed;
   top: 8px;

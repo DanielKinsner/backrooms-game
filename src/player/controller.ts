@@ -49,6 +49,15 @@ export class PlayerController {
   private bobPhase = 0
   private bobAmount = 0 // smoothed walk-energy 0..1
 
+  /** Camcorder zoom 0..1 (RMB). Exposed so the post stack can add tape strain. */
+  zoom = 0
+  /** Mantle progress: <0 idle, 0..1 climbing (input locked while climbing). */
+  private mantleT = -1
+  private mantleFrom = new THREE.Vector3()
+  private mantleTo = new THREE.Vector3()
+  /** External freeze (reading a note, cutscenes). Camera still syncs. */
+  frozen = false
+
   constructor(private readonly camera: THREE.PerspectiveCamera) {}
 
   setSpawn(x: number, y: number, z: number, yaw = 0): void {
@@ -70,8 +79,25 @@ export class PlayerController {
 
   update(dt: number, input: Input, colliders: THREE.Mesh[]): void {
     this.time += dt
+
+    if (this.frozen) {
+      input.consumeMouse()
+      this.syncCamera()
+      return
+    }
+
+    if (this.mantleT >= 0) {
+      this.stepMantle(dt)
+      this.updateZoom(dt, input)
+      this.syncCamera()
+      return
+    }
+
     this.look(input)
+    this.updateZoom(dt, input)
     this.crouchStand(dt, input, colliders)
+    if (input.isDown('Space')) this.tryMantle(colliders)
+    if (this.mantleT >= 0) return
     this.accelerate(dt, input)
 
     // Integrate
@@ -94,8 +120,85 @@ export class PlayerController {
 
   private look(input: Input): void {
     const { dx, dy } = input.consumeMouse()
-    this.yaw -= dx * MOUSE_SENS
-    this.pitch = THREE.MathUtils.clamp(this.pitch - dy * MOUSE_SENS, -PITCH_LIMIT, PITCH_LIMIT)
+    const sens = MOUSE_SENS * (1 - this.zoom * 0.55) // zoomed = steadier
+    this.yaw -= dx * sens
+    this.pitch = THREE.MathUtils.clamp(this.pitch - dy * sens, -PITCH_LIMIT, PITCH_LIMIT)
+  }
+
+  private updateZoom(dt: number, input: Input): void {
+    const target = input.isMouseDown(2) ? 1 : 0
+    this.zoom += (target - this.zoom) * (1 - Math.exp(-9 * dt))
+    const fov = THREE.MathUtils.lerp(66, 30, this.zoom)
+    if (Math.abs(this.camera.fov - fov) > 0.01) {
+      this.camera.fov = fov
+      this.camera.updateProjectionMatrix()
+    }
+  }
+
+  /**
+   * Mantle (DESIGN.md §5): chest-height obstacle ahead + clear top within
+   * reach → 0.7s scripted climb, input locked. Raycasts against the BVH
+   * colliders: forward at chest height, down to find the ledge, up for
+   * headroom.
+   */
+  private tryMantle(colliders: THREE.Mesh[]): void {
+    if (!this.onGround) return
+    _move.set(-Math.sin(this.yaw), 0, -Math.cos(this.yaw))
+
+    _delta.copy(this.position)
+    _delta.y += 1.0
+    _upRay.set(_delta, _move)
+    _upRay.far = RADIUS + 0.65
+    let nearest: THREE.Intersection | null = null
+    for (const c of colliders) {
+      const hit = _upRay.intersectObject(c, false)[0]
+      if (hit && (!nearest || hit.distance < nearest.distance)) nearest = hit
+    }
+    if (!nearest) return
+
+    // top scan: from above a point just past the obstacle face, cast down
+    _delta.copy(this.position).addScaledVector(_move, nearest.distance + RADIUS + 0.12)
+    _delta.y = this.position.y + 1.45
+    _upRay.set(_delta, new THREE.Vector3(0, -1, 0))
+    _upRay.far = 1.6
+    let top: THREE.Intersection | null = null
+    for (const c of colliders) {
+      const hit = _upRay.intersectObject(c, false)[0]
+      if (hit && (!top || hit.distance < top.distance)) top = hit
+    }
+    if (!top) return
+    const topY = top.point.y
+    const rise = topY - this.position.y
+    if (rise < 0.35 || rise > 1.2) return
+
+    // headroom above the ledge for a crouched body
+    _delta.set(top.point.x, topY + 0.05, top.point.z)
+    _upRay.set(_delta, new THREE.Vector3(0, 1, 0))
+    _upRay.far = CROUCH_HEIGHT + 0.1
+    for (const c of colliders) {
+      if (_upRay.intersectObject(c, false).length > 0) return
+    }
+
+    this.mantleFrom.copy(this.position)
+    this.mantleTo.set(top.point.x, topY + 0.02, top.point.z)
+    this.mantleT = 0
+    this.velocity.set(0, 0, 0)
+  }
+
+  private stepMantle(dt: number): void {
+    this.mantleT += dt / 0.7
+    const t = Math.min(this.mantleT, 1)
+    // rise first (60%), then move over the lip
+    const riseT = Math.min(t / 0.6, 1)
+    const overT = Math.max((t - 0.55) / 0.45, 0)
+    const ease = (v: number): number => v * v * (3 - 2 * v)
+    this.position.y = THREE.MathUtils.lerp(this.mantleFrom.y, this.mantleTo.y, ease(riseT))
+    this.position.x = THREE.MathUtils.lerp(this.mantleFrom.x, this.mantleTo.x, ease(overT))
+    this.position.z = THREE.MathUtils.lerp(this.mantleFrom.z, this.mantleTo.z, ease(overT))
+    if (this.mantleT >= 1) {
+      this.mantleT = -1
+      this.onGround = true
+    }
   }
 
   private crouchStand(dt: number, input: Input, colliders: THREE.Mesh[]): void {

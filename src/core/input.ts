@@ -28,6 +28,24 @@ export class Input {
         this.dy += e.movementY
       }
     })
+
+    document.addEventListener('mousedown', (e) => {
+      if (this.locked) this.buttons.add(e.button)
+    })
+    document.addEventListener('mouseup', (e) => this.buttons.delete(e.button))
+  }
+
+  private buttons = new Set<number>()
+  private heldButtons = new Set<number>()
+
+  isMouseDown(button: number): boolean {
+    return this.buttons.has(button) || this.heldButtons.has(button)
+  }
+
+  /** Test hook, like setKey. */
+  setMouse(button: number, down: boolean): void {
+    if (down) this.heldButtons.add(button)
+    else this.heldButtons.delete(button)
   }
 
   isDown(code: string): boolean {

@@ -12,6 +12,8 @@ import { initWorldMaterials } from './world/materials'
 import { FixturePool } from './world/lighting'
 import { createPostStack } from './fx/post'
 import { CamcorderHud } from './ui/hud'
+import { InteractSystem, NoteOverlay } from './player/interact'
+import { buildTestProps } from './story/props'
 
 // three-mesh-bvh integration (tech brief: BVH per chunk, accelerated raycasts everywhere)
 THREE.BufferGeometry.prototype.computeBoundsTree = computeBoundsTree
@@ -48,6 +50,9 @@ async function boot(): Promise<void> {
   const post = createPostStack(renderer, scene, camera)
   const hud = new CamcorderHud()
   const debug = new DebugHud(renderer)
+  const interact = new InteractSystem()
+  const notes = new NoteOverlay()
+  const props = buildTestProps(scene, interact, notes)
 
   overlay.addEventListener('click', () => input.requestLock())
   input.onLockChange = (locked) => {
@@ -64,13 +69,35 @@ async function boot(): Promise<void> {
   })
 
   // Automation can run the sim without pointer lock (headless playthroughs).
-  const devHooks = { player, input, scene, camera, renderer, world, lights, post, hud, autopilot: false }
+  const devHooks = {
+    player,
+    input,
+    scene,
+    camera,
+    renderer,
+    world,
+    lights,
+    post,
+    hud,
+    interact,
+    notes,
+    THREE,
+    autopilot: false,
+  }
 
   const loop = new Loop((dt, time) => {
-    if (input.locked || devHooks.autopilot) {
-      player.update(dt, input, world.collidersNear(player.position.x, player.position.z))
+    const active = input.locked || devHooks.autopilot
+    if (active) {
+      const justClosedNote = notes.update(input)
+      player.frozen = notes.reading
+      const colliders = world
+        .collidersNear(player.position.x, player.position.z)
+        .concat(props.colliders)
+      player.update(dt, input, colliders)
+      interact.update(camera, input, !notes.reading && !justClosedNote)
       hud.update(dt)
     }
+    post.vhs.intensity = 1 + player.zoom * 0.55 // zoomed tape strains
     world.update(player.position.x, player.position.z)
     lights.update(world, player.position.x, player.position.z, time)
     debug.update(dt, player.position)
