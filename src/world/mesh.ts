@@ -101,6 +101,22 @@ export function buildChunkMeshes(data: ChunkData): BuiltChunk {
   floor.addFace(_o.set(x0, 0, z0 + CHUNK_SIZE), PX, CHUNK_SIZE, NZ, CHUNK_SIZE, PY)
   ceil.addFace(_o.set(x0, CEIL_H, z0), PX, CHUNK_SIZE, PZ, CHUNK_SIZE, NY)
 
+  // Damp patches — openDamp zones always, elsewhere rare (canon: the carpet
+  // is moist in places; you notice before you understand why that's wrong)
+  const damp = new GeoAccum()
+  const dh = (i: number): number => {
+    const v = Math.sin(data.cx * 269.5 + data.cz * 183.3 + i * 97.7) * 43758.5453
+    return v - Math.floor(v)
+  }
+  const patchCount = data.zone === 'openDamp' ? 2 + Math.floor(dh(0) * 2) : dh(1) < 0.18 ? 1 : 0
+  for (let i = 0; i < patchCount; i++) {
+    const w = 1.8 + dh(i * 3 + 2) * 2.4
+    const d = 1.8 + dh(i * 3 + 3) * 2.4
+    const px = x0 + 1 + dh(i * 3 + 4) * (CHUNK_SIZE - w - 2)
+    const pz = z0 + 1 + dh(i * 3 + 5) * (CHUNK_SIZE - d - 2)
+    damp.addFace(_o.set(px, 0.004, pz + d), PX, w, NZ, d, PY)
+  }
+
   const addWallBox = (ax: number, az: number, bx: number, bz: number, alongX: boolean): void => {
     // Wall slab from (ax,az) to (bx,bz) along its axis, WALL_HALF_T each side.
     if (alongX) {
@@ -224,6 +240,7 @@ export function buildChunkMeshes(data: ChunkData): BuiltChunk {
   const geos: THREE.BufferGeometry[] = []
   const buckets: Array<[GeoAccum, THREE.Material]> = [
     [floor, worldMaterials.carpet],
+    [damp, worldMaterials.carpetDamp],
     [ceil, worldMaterials.ceiling],
     [wall, worldMaterials.wall],
     [trim, worldMaterials.trim],

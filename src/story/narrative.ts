@@ -112,6 +112,7 @@ export class Narrative {
     this.pauseEl.classList.toggle('hidden', !this.tapePaused)
 
     this.placeNotes()
+    if (this.walked > 1400) this.unlockDescent()
     this.stepSilhouette(dt)
     this.stepMetaBeat(dt)
     this.stepNearMiss(dt)
@@ -193,11 +194,19 @@ export class Narrative {
 
   private onNoteRead(): void {
     this.notesRead++
-    if (this.notesRead === 7) {
-      this.metaBeatAt = 8 // the tape acknowledges you, 8s after the descent note
-      this.nearMissAt = this.rng.range(35, 55)
-      this.placeExit()
-    }
+    if (this.notesRead >= 7) this.unlockDescent()
+  }
+
+  private descentUnlocked = false
+
+  /** Reading note 7 unlocks the exit — or sheer distance walked, so a
+   *  player who never spots the papers can't soft-lock the story. */
+  private unlockDescent(): void {
+    if (this.descentUnlocked) return
+    this.descentUnlocked = true
+    this.metaBeatAt = 8 // the tape acknowledges you, 8s after the descent unlocks
+    this.nearMissAt = this.rng.range(35, 55)
+    this.placeExit()
   }
 
   /** A clear-ish point ahead of the player, on carpet, not inside a wall. */

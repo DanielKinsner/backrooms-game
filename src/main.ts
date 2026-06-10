@@ -117,6 +117,8 @@ async function boot(): Promise<void> {
   const loop = new Loop((dt, time) => {
     const active = input.locked || devHooks.autopilot
     if (active) {
+      const bot = (devHooks as { playbot?: { running: boolean; update(dt: number): void } }).playbot
+      if (bot?.running) bot.update(dt)
       const justClosedNote = notes.update(input)
       narrative.update(dt)
       player.frozen = notes.reading || narrative.tapePaused || narrative.cinematic
@@ -168,6 +170,15 @@ async function boot(): Promise<void> {
   if (import.meta.env.DEV) {
     // Automation harness for headless playthrough validation (DESIGN.md §13.10).
     Object.assign(window, { __noclip: devHooks })
+    void import('./dev/playbot').then(({ Playbot }) => {
+      ;(devHooks as Record<string, unknown>).playbot = new Playbot({
+        player,
+        input,
+        interact,
+        notes,
+        narrative,
+      })
+    })
   }
 }
 

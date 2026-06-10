@@ -19,6 +19,8 @@ export const worldMaterials = {
     emissiveIntensity: 2.2,
   }),
   furniture: new THREE.MeshStandardMaterial({ color: 0x4f4233, roughness: 0.8 }),
+  /** "the stink of old moist carpet" — darker, wet-sheened patches. */
+  carpetDamp: new THREE.MeshStandardMaterial({ color: 0x8a857a, roughness: 0.5 }),
 }
 
 /**
@@ -167,7 +169,7 @@ export async function initWorldMaterials(): Promise<void> {
   const base = import.meta.env.BASE_URL
   const load = (p: string): Promise<THREE.Texture> => loader.loadAsync(`${base}textures/${p}`)
 
-  const [carpetC, carpetN, carpetR, carpetAO, wallN, wallR, ceilC, ceilN, ceilR, ceilAO] =
+  const [carpetC, carpetN, carpetR, carpetAO, wallN, wallR, ceilC, ceilN, ceilR, ceilAO, dampC, dampN] =
     await Promise.all([
       load('carpet/color.jpg'),
       load('carpet/normal.jpg'),
@@ -179,6 +181,8 @@ export async function initWorldMaterials(): Promise<void> {
       load('ceiling/normal.jpg'),
       load('ceiling/rough.jpg'),
       load('ceiling/ao.jpg'),
+      load('carpet_damp/color.jpg'),
+      load('carpet_damp/normal.jpg'),
     ])
 
   const m = worldMaterials
@@ -205,5 +209,9 @@ export async function initWorldMaterials(): Promise<void> {
   m.ceiling.aoMap = setupTiling(ceilAO, CEILING_PERIOD)
   m.ceiling.color.set(0xcfc4a2) // grime tint over the clean white tiles
 
-  for (const mat of [m.carpet, m.wall, m.ceiling]) mat.needsUpdate = true
+  m.carpetDamp.map = setupTiling(dampC, 1.6, true)
+  m.carpetDamp.normalMap = setupTiling(dampN, 1.6)
+  m.carpetDamp.normalScale.setScalar(0.8)
+
+  for (const mat of [m.carpet, m.wall, m.ceiling, m.carpetDamp]) mat.needsUpdate = true
 }

@@ -17,7 +17,29 @@ audio engine → director → mechanics → narrative arc → CI deploy.
   bulkhead, ending slates → reload loop
 - Prod build under /backrooms-game/ base path + live Pages deploy
 
-### Backlog for polish iterations (Task 10)
+## 2026-06-10 — session 3 (polish + organic E2E validation → DONE)
+
+Polish pass shipped: chalk arrows, abandoned furniture (organic mantle
+targets), almond water (dread relief + 40s steady-cam), damp carpet
+patches (openDamp always, elsewhere rare), true debug HUD stats.
+
+**Organic playthrough (src/dev/playbot.ts, real input/interact paths):**
+9.5 min, 1009 m walked, ALL 8 notes found+read organically, 3 bottles
+drunk, silhouette/meta-beat/near-miss/pause-the-tape all fired, ending
+reached. 180 fps on every 10s sample, ZERO console errors. 5 teleport
+assists = bot has no pathfinding (wall-grinder), not a level defect.
+
+**Fix surfaced by the run:** exit unlock previously required 7 notes
+READ → human soft-lock risk if papers go unspotted. Now `unlockDescent()`
+fires on notesRead≥7 OR walked>1400 (verified: 1401 m + 0 notes →
+exit placed).
+
+**Remaining (needs a human):** audio listen test (engine verified by
+analyser levels only); a real-GPU feel pass on Dan's machine. Optional
+future: Kane-style walkable intro hallway (slate intro shipped instead),
+GTAO, WebGPU/TSL port via the createRenderer seam.
+
+### Original backlog (now resolved except as noted)
 1. **Chalk arrows** — notes 1 & 7 reference arrows on walls; they don't exist
    visually yet. Canvas-chalk decals on walls along a lying guidance path. HIGH.
 2. **Mantle targets in-world** — maze has no organic furniture; add desks/
