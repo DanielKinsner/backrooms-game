@@ -4,6 +4,7 @@ export class Input {
   onLockChange?: (locked: boolean) => void
 
   private keys = new Set<string>()
+  private heldKeys = new Set<string>() // automation holds; survive blur/lock-loss
   private dx = 0
   private dy = 0
 
@@ -30,13 +31,13 @@ export class Input {
   }
 
   isDown(code: string): boolean {
-    return this.keys.has(code)
+    return this.keys.has(code) || this.heldKeys.has(code)
   }
 
   /** Test hook: hold or release a key programmatically (dev automation drives playthroughs with this). */
   setKey(code: string, down: boolean): void {
-    if (down) this.keys.add(code)
-    else this.keys.delete(code)
+    if (down) this.heldKeys.add(code)
+    else this.heldKeys.delete(code)
   }
 
   consumeMouse(): { dx: number; dy: number } {

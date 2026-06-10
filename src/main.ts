@@ -6,7 +6,8 @@ import { Input } from './core/input'
 import { Loop } from './core/loop'
 import { DebugHud } from './core/debug'
 import { PlayerController } from './player/controller'
-import { buildTestRoom } from './world/testRoom'
+import { ChunkManager } from './world/manager'
+import { CELL } from './world/gen'
 
 // three-mesh-bvh integration (tech brief: BVH per chunk, accelerated raycasts everywhere)
 THREE.BufferGeometry.prototype.computeBoundsTree = computeBoundsTree
@@ -26,10 +27,15 @@ scene.background = new THREE.Color(FOG_COLOR)
 
 const camera = new THREE.PerspectiveCamera(66, window.innerWidth / window.innerHeight, 0.05, 120)
 
+// Interim ambient until the Task 5 lighting pass (fixture pool + GTAO).
+scene.add(new THREE.HemisphereLight(0xfff0c4, 0x595134, 0.8))
+
 const input = new Input(canvas)
 const player = new PlayerController(camera)
-const world = buildTestRoom(scene)
-player.setSpawn(0, 0.5, 0)
+const world = new ChunkManager(scene)
+const SPAWN_X = CELL * 4.5 // middle of the spawn pillar hall
+player.setSpawn(SPAWN_X, 0.5, SPAWN_X)
+world.ensureInitial(SPAWN_X, SPAWN_X)
 
 const hud = new DebugHud(renderer)
 
@@ -42,10 +48,14 @@ window.addEventListener('resize', () => {
   renderer.setSize(window.innerWidth, window.innerHeight)
 })
 
+// Automation can run the sim without pointer lock (headless playthroughs).
+const devHooks = { player, input, scene, camera, renderer, world, autopilot: false }
+
 const loop = new Loop((dt) => {
-  if (input.locked) {
-    player.update(dt, input, world.colliders)
+  if (input.locked || devHooks.autopilot) {
+    player.update(dt, input, world.collidersNear(player.position.x, player.position.z))
   }
+  world.update(player.position.x, player.position.z)
   hud.update(dt, player.position)
   renderer.render(scene, camera)
 })
@@ -54,5 +64,5 @@ loop.start()
 
 if (import.meta.env.DEV) {
   // Automation harness for headless playthrough validation (DESIGN.md §13.10).
-  Object.assign(window, { __noclip: { player, input, scene, camera, renderer } })
+  Object.assign(window, { __noclip: devHooks })
 }
