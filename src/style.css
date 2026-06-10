@@ -49,6 +49,100 @@ body {
   opacity: 0.5;
 }
 
+/* ---- camcorder burn-in ---- */
+#cam-hud {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 5;
+  font-family: 'VT323', 'Courier New', monospace;
+  color: rgba(235, 235, 225, 0.92);
+  text-shadow: 0 0 6px rgba(220, 220, 200, 0.55), 1px 0 0 rgba(255, 80, 80, 0.18),
+    -1px 0 0 rgba(80, 160, 255, 0.18);
+}
+
+#cam-hud.hidden {
+  display: none;
+}
+
+.hud-corner {
+  position: absolute;
+  width: 34px;
+  height: 34px;
+  border: 2px solid rgba(235, 235, 225, 0.5);
+}
+.hud-corner.tl { top: 26px; left: 30px; border-right: none; border-bottom: none; }
+.hud-corner.tr { top: 26px; right: 30px; border-left: none; border-bottom: none; }
+.hud-corner.bl { bottom: 26px; left: 30px; border-right: none; border-top: none; }
+.hud-corner.br { bottom: 26px; right: 30px; border-left: none; border-top: none; }
+
+.hud-rec {
+  position: absolute;
+  top: 34px;
+  left: 52px;
+  font-size: 28px;
+  letter-spacing: 2px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.hud-dot {
+  width: 13px;
+  height: 13px;
+  border-radius: 50%;
+  background: #e33;
+  box-shadow: 0 0 8px rgba(255, 40, 40, 0.8);
+  animation: rec-blink 1.6s steps(1) infinite;
+}
+
+@keyframes rec-blink {
+  0%, 70% { opacity: 1; }
+  71%, 100% { opacity: 0.15; }
+}
+
+.hud-batt {
+  position: absolute;
+  top: 38px;
+  right: 56px;
+  font-size: 22px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.batt-body {
+  display: inline-block;
+  width: 34px;
+  height: 14px;
+  border: 2px solid rgba(235, 235, 225, 0.75);
+  position: relative;
+}
+.batt-body::after {
+  content: '';
+  position: absolute;
+  right: -6px;
+  top: 3px;
+  width: 4px;
+  height: 8px;
+  background: rgba(235, 235, 225, 0.75);
+}
+.batt-fill {
+  display: block;
+  height: 100%;
+  background: rgba(235, 235, 225, 0.8);
+}
+
+.hud-stamp {
+  position: absolute;
+  bottom: 36px;
+  right: 56px;
+  font-size: 26px;
+  line-height: 1.15;
+  text-align: right;
+  letter-spacing: 1px;
+}
+
 #debug-hud {
   position: fixed;
   top: 8px;

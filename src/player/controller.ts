@@ -45,6 +45,9 @@ export class PlayerController {
   sprinting = false
 
   private spawn = new THREE.Vector3()
+  private time = 0
+  private bobPhase = 0
+  private bobAmount = 0 // smoothed walk-energy 0..1
 
   constructor(private readonly camera: THREE.PerspectiveCamera) {}
 
@@ -66,6 +69,7 @@ export class PlayerController {
   }
 
   update(dt: number, input: Input, colliders: THREE.Mesh[]): void {
+    this.time += dt
     this.look(input)
     this.crouchStand(dt, input, colliders)
     this.accelerate(dt, input)
@@ -191,10 +195,29 @@ export class PlayerController {
     return totalPushY
   }
 
+  /**
+   * Amateur-camcorder feel (market brief: gimbal-smooth kills immersion):
+   * walk bob scaled by speed, plus a slow idle breathing sway. Subtle.
+   */
   private syncCamera(): void {
+    const horizSpeed = Math.hypot(this.velocity.x, this.velocity.z)
+    const energy = Math.min(horizSpeed / SPRINT_SPEED, 1)
+    this.bobAmount += (energy - this.bobAmount) * 0.12
+    this.bobPhase += horizSpeed * 0.55 * (1 / 60)
+
+    const bob = this.bobAmount
+    const bobY = Math.sin(this.bobPhase * 2) * 0.028 * bob
+    const bobX = Math.sin(this.bobPhase) * 0.016 * bob
+    const roll = Math.sin(this.bobPhase) * 0.006 * bob + Math.sin(this.time * 0.23) * 0.0035
+    const swayYaw = Math.sin(this.time * 0.31) * 0.004
+    const swayPitch = Math.sin(this.time * 0.43) * 0.003
+
     this.camera.position.copy(this.position)
-    this.camera.position.y += this.eyeHeight
-    _euler.set(this.pitch, this.yaw, 0)
+    this.camera.position.y += this.eyeHeight + bobY
+    _euler.set(this.pitch + swayPitch, this.yaw + swayYaw, roll)
     this.camera.quaternion.setFromEuler(_euler)
+    // lateral bob in view space
+    _move.set(Math.cos(this.yaw), 0, -Math.sin(this.yaw)).multiplyScalar(bobX)
+    this.camera.position.add(_move)
   }
 }

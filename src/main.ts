@@ -8,61 +8,84 @@ import { DebugHud } from './core/debug'
 import { PlayerController } from './player/controller'
 import { ChunkManager } from './world/manager'
 import { CELL } from './world/gen'
+import { initWorldMaterials } from './world/materials'
+import { FixturePool } from './world/lighting'
+import { createPostStack } from './fx/post'
+import { CamcorderHud } from './ui/hud'
 
 // three-mesh-bvh integration (tech brief: BVH per chunk, accelerated raycasts everywhere)
 THREE.BufferGeometry.prototype.computeBoundsTree = computeBoundsTree
 THREE.BufferGeometry.prototype.disposeBoundsTree = disposeBoundsTree
 THREE.Mesh.prototype.raycast = acceleratedRaycast
 
-const canvas = document.querySelector<HTMLCanvasElement>('#game')!
-const overlay = document.querySelector<HTMLDivElement>('#overlay')!
+async function boot(): Promise<void> {
+  const canvas = document.querySelector<HTMLCanvasElement>('#game')!
+  const overlay = document.querySelector<HTMLDivElement>('#overlay')!
 
-const renderer = createRenderer(canvas)
-const scene = new THREE.Scene()
+  const renderer = createRenderer(canvas)
+  const scene = new THREE.Scene()
 
-// Sickly desaturated yellow-green; fog is both draw-distance budget and dread engine.
-const FOG_COLOR = 0x73683f
-scene.fog = new THREE.FogExp2(FOG_COLOR, 0.05)
-scene.background = new THREE.Color(FOG_COLOR)
+  // Sickly desaturated yellow; fog is both draw-distance budget and dread engine.
+  const FOG_COLOR = 0x7a6f45
+  scene.fog = new THREE.FogExp2(FOG_COLOR, 0.034)
+  scene.background = new THREE.Color(FOG_COLOR)
 
-const camera = new THREE.PerspectiveCamera(66, window.innerWidth / window.innerHeight, 0.05, 120)
+  const camera = new THREE.PerspectiveCamera(66, window.innerWidth / window.innerHeight, 0.05, 120)
 
-// Interim ambient until the Task 5 lighting pass (fixture pool + GTAO).
-scene.add(new THREE.HemisphereLight(0xfff0c4, 0x595134, 0.8))
+  // Ambient base: warm from above (fixtures everywhere), carpet bounce from below.
+  scene.add(new THREE.HemisphereLight(0xfff1c9, 0x8a7c52, 0.72))
 
-const input = new Input(canvas)
-const player = new PlayerController(camera)
-const world = new ChunkManager(scene)
-const SPAWN_X = CELL * 4.5 // middle of the spawn pillar hall
-player.setSpawn(SPAWN_X, 0.5, SPAWN_X)
-world.ensureInitial(SPAWN_X, SPAWN_X)
+  await initWorldMaterials()
 
-const hud = new DebugHud(renderer)
+  const input = new Input(canvas)
+  const player = new PlayerController(camera)
+  const world = new ChunkManager(scene)
+  const lights = new FixturePool(scene)
+  const SPAWN_X = CELL * 4.5 // middle of the spawn pillar hall
+  player.setSpawn(SPAWN_X, 0.5, SPAWN_X)
+  world.ensureInitial(SPAWN_X, SPAWN_X)
 
-overlay.addEventListener('click', () => input.requestLock())
-input.onLockChange = (locked) => overlay.classList.toggle('hidden', locked)
+  const post = createPostStack(renderer, scene, camera)
+  const hud = new CamcorderHud()
+  const debug = new DebugHud(renderer)
 
-window.addEventListener('resize', () => {
-  camera.aspect = window.innerWidth / window.innerHeight
-  camera.updateProjectionMatrix()
-  renderer.setSize(window.innerWidth, window.innerHeight)
-})
-
-// Automation can run the sim without pointer lock (headless playthroughs).
-const devHooks = { player, input, scene, camera, renderer, world, autopilot: false }
-
-const loop = new Loop((dt) => {
-  if (input.locked || devHooks.autopilot) {
-    player.update(dt, input, world.collidersNear(player.position.x, player.position.z))
+  overlay.addEventListener('click', () => input.requestLock())
+  input.onLockChange = (locked) => {
+    overlay.classList.toggle('hidden', locked)
+    if (locked) hud.show()
+    else hud.hide()
   }
-  world.update(player.position.x, player.position.z)
-  hud.update(dt, player.position)
-  renderer.render(scene, camera)
-})
 
-loop.start()
+  window.addEventListener('resize', () => {
+    camera.aspect = window.innerWidth / window.innerHeight
+    camera.updateProjectionMatrix()
+    renderer.setSize(window.innerWidth, window.innerHeight)
+    post.setSize(window.innerWidth, window.innerHeight)
+  })
 
-if (import.meta.env.DEV) {
-  // Automation harness for headless playthrough validation (DESIGN.md §13.10).
-  Object.assign(window, { __noclip: devHooks })
+  // Automation can run the sim without pointer lock (headless playthroughs).
+  const devHooks = { player, input, scene, camera, renderer, world, lights, post, hud, autopilot: false }
+
+  const loop = new Loop((dt, time) => {
+    if (input.locked || devHooks.autopilot) {
+      player.update(dt, input, world.collidersNear(player.position.x, player.position.z))
+      hud.update(dt)
+    }
+    world.update(player.position.x, player.position.z)
+    lights.update(world, player.position.x, player.position.z, time)
+    debug.update(dt, player.position)
+    post.composer.render(dt)
+  })
+
+  loop.start()
+
+  if (import.meta.env.DEV) {
+    // Automation harness for headless playthrough validation (DESIGN.md §13.10).
+    Object.assign(window, { __noclip: devHooks })
+  }
 }
+
+boot().catch((e: unknown) => {
+  console.error('[noclip] boot failed:', e)
+  document.title = `BOOT FAIL: ${e instanceof Error ? e.message : String(e)}`
+})
