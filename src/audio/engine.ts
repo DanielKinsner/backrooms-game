@@ -460,6 +460,11 @@ export class AudioEngine {
     return this.ctx.currentTime - this.lastNoiseAt
   }
 
+  /** Looming telegraph on the sub pad (see DreadBed.loom). */
+  loom(rampS?: number, holdS?: number, recedeS?: number): void {
+    this.bed?.loom(rampS, holdS, recedeS)
+  }
+
   /** Foley step callback (director's mimic system listens for the cadence). */
   private stepCallback: ((sprinting: boolean) => void) | null = null
   set onPlayerStep(cb: ((sprinting: boolean) => void) | null) {
@@ -622,6 +627,111 @@ export class AudioEngine {
     src.start(t)
     src.stop(t + 2)
     this.cleanup(src, [bp, vca, panner], t + 2.1)
+  }
+
+  /**
+   * A desk phone, off the hook, dial tone running (350+440 Hz — the 2002 US
+   * precise tone). Returns a handle: hangUp() cuts to the dead-line click.
+   * Someone left in the middle of a call. The phone never stopped waiting.
+   */
+  startDialTone(x: number, y: number, z: number): { hangUp: () => void } | null {
+    if (!this.ctx) return null
+    const ctx = this.ctx
+    const t = ctx.currentTime
+    const vca = ctx.createGain()
+    vca.gain.setValueAtTime(0, t)
+    vca.gain.setTargetAtTime(0.05, t, 0.4)
+    const panner = this.makePanner(x, y, z, 22)
+    const oscs: OscillatorNode[] = []
+    for (const f of [350, 440]) {
+      const o = ctx.createOscillator()
+      o.type = 'sine'
+      o.frequency.value = f
+      o.connect(vca)
+      o.start(t)
+      oscs.push(o)
+    }
+    vca.connect(panner).connect(this.sfxBus)
+    let done = false
+    return {
+      hangUp: (): void => {
+        if (done || !this.ctx) return
+        done = true
+        const tt = this.ctx.currentTime
+        // the line notices you: dial tone stops, one click, then nothing
+        vca.gain.cancelScheduledValues(tt)
+        vca.gain.setValueAtTime(vca.gain.value, tt)
+        vca.gain.linearRampToValueAtTime(0, tt + 0.06)
+        this.playTick(x, y, z, 1.4)
+        for (const o of oscs) o.stop(tt + 0.1)
+        window.setTimeout(() => {
+          try {
+            vca.disconnect()
+            panner.disconnect()
+          } catch {
+            /* gone */
+          }
+        }, 300)
+      },
+    }
+  }
+
+  /**
+   * The descent (ending only): a barely-audible descending Shepard stack —
+   * six octave-spaced sines under a raised-cosine loudness window, all
+   * gliding down and wrapping. A floor that never stops falling. No key,
+   * no melody; the no-music pillar survives on a technicality.
+   */
+  startShepardDescent(seconds: number): void {
+    if (!this.ctx) return
+    const ctx = this.ctx
+    const N = 6
+    const FMIN = 40
+    const FMAX = FMIN * Math.pow(2, N) // 2560 Hz
+    const master = ctx.createGain()
+    master.gain.value = 0
+    master.gain.setTargetAtTime(0.05, ctx.currentTime, 2)
+    // presence bus: survives the ending's silence() cut of the ambience bus
+    master.connect(this.presenceBus)
+    const oscs: { o: OscillatorNode; g: GainNode; f: number }[] = []
+    for (let i = 0; i < N; i++) {
+      const o = ctx.createOscillator()
+      o.type = 'sine'
+      const g = ctx.createGain()
+      o.connect(g).connect(master)
+      const f = FMIN * Math.pow(2, i + 0.5)
+      o.frequency.value = f
+      o.start()
+      oscs.push({ o, g, f })
+    }
+    const tick = window.setInterval(() => {
+      if (!this.ctx) return
+      const t = this.ctx.currentTime
+      for (const v of oscs) {
+        v.f *= 0.9972 // ~ -1 octave / 40 s
+        if (v.f < FMIN) v.f *= Math.pow(2, N)
+        // raised-cosine window over log-frequency position
+        const pos = Math.log(v.f / FMIN) / Math.log(FMAX / FMIN)
+        const w = 0.5 - 0.5 * Math.cos(Math.PI * 2 * pos)
+        v.o.frequency.setTargetAtTime(v.f, t, 0.06)
+        v.g.gain.setTargetAtTime(w * w * 0.3, t, 0.06)
+      }
+    }, 50)
+    window.setTimeout(() => {
+      window.clearInterval(tick)
+      if (!this.ctx) return
+      master.gain.setTargetAtTime(0, this.ctx.currentTime, 1.5)
+      window.setTimeout(() => {
+        for (const v of oscs) {
+          try {
+            v.o.stop()
+          } catch {
+            /* stopped */
+          }
+        }
+        master.disconnect()
+      }, 6000)
+    }, seconds * 1000)
   }
 
   /** Almond water going down. Two soft gulps, then quiet. */

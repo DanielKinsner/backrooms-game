@@ -60,8 +60,21 @@ export class CamcorderHud {
     this.root.classList.add('hidden')
   }
 
+  private reverseT = -1
+
+  /** Impossible artifact: the counter visibly runs BACKWARD for `seconds`
+   *  while gameplay continues forward. Max twice per run, post-meta-beat. */
+  reverseFor(seconds: number): void {
+    this.reverseT = seconds
+  }
+
   update(dt: number, dread = 0, moving = true): void {
-    this.tapeTime += dt
+    if (this.reverseT > 0) {
+      this.reverseT -= dt
+      this.tapeTime = Math.max(0, this.tapeTime - dt * 3)
+    } else {
+      this.tapeTime += dt
+    }
     // visible drain: the bar loses ~15-20% across a full run and goes low
     // right around the descent. the battery is the only honest clock left.
     this.battery = Math.max(0.05, this.battery - dt * 0.00012)

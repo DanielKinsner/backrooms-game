@@ -1,5 +1,7 @@
 import * as THREE from 'three'
 import { TRAIL_NOTES, TRAIL_NOTE_6_AFTER, FINAL_NOTE, ENDING_LINES, INTRO_LINES } from './notes'
+import { ManilaRoom } from './manila'
+import { getFootprintMaterial } from '../world/materials'
 import type { ChunkManager } from '../world/manager'
 import type { PlayerController } from '../player/controller'
 import type { InteractSystem, NoteOverlay } from '../player/interact'
@@ -41,6 +43,8 @@ export class Narrative {
   tapePaused = false
   /** True during slates/endings; main freezes the body. */
   cinematic = false
+  /** Impossible artifact: >0 holds the rendered frame while audio continues. */
+  freezeT = -1
 
   private placedNotes = 0
   private rng = new Rng('d-was-here')
@@ -117,6 +121,7 @@ export class Narrative {
     this.stepMetaBeat(dt)
     this.stepNearMiss(dt)
     this.stepEnding(dt)
+    this.stepWave3(dt)
 
     // acts drive the dread floor
     director.setDreadFloor(Math.min(0.1 + this.notesRead * 0.09 + this.walked * 0.00018, 0.95))
@@ -132,6 +137,164 @@ export class Narrative {
       audio.playBroadcastLeak()
     }
     void hud
+  }
+
+  // ---- wave 3 ----------------------------------------------------------
+
+  private stepWave3(dt: number): void {
+    this.freezeT -= dt
+    this.manila?.update(dt)
+
+    // THE PHONE (kenopsia): a desk phone off the hook, dial tone running.
+    // 2002. someone left mid-call. hang it up, or don't.
+    if (!this.phoneDone && this.walked > 210) {
+      const spot = this.findFloorSpot(10, 16)
+      if (spot) {
+        this.phoneDone = true
+        this.placePhone(spot)
+      }
+    }
+    // the line gives up if you walk away from it
+    if (this.phoneHandle && this.phoneAt) {
+      const d = Math.hypot(
+        this.ctx.player.position.x - this.phoneAt.x,
+        this.ctx.player.position.z - this.phoneAt.z,
+      )
+      if (d > 32) {
+        this.phoneHandle.hangUp()
+        this.phoneHandle = null
+      }
+    }
+
+    // THE MANILA ROOM: the only mercy, ~mid-arc, once.
+    if (!this.manila && this.walked > 350) {
+      const spot = this.findFloorSpot(16, 22)
+      if (spot) {
+        this.manila = new ManilaRoom({
+          scene: this.ctx.scene,
+          player: this.ctx.player,
+          interact: this.ctx.interact,
+          notesOverlay: this.ctx.notesOverlay,
+          audio: this.ctx.audio,
+          director: this.ctx.director,
+          post: this.ctx.post,
+          colliders: this.colliders,
+        })
+        this.manila.place(spot)
+      }
+    }
+
+    // WET FOOTPRINTS: they lead to a wall. they stop there.
+    if (!this.footprintsDone && this.walked > 460) {
+      this.footprintsDone = this.placeFootprints()
+    }
+
+    // IMPOSSIBLE ARTIFACTS (post-meta-beat, max two, minutes apart): the
+    // tape operates outside its own parameters. nobody will agree on these.
+    if (this.metaBeatDone && this.artifactsFired < 2) {
+      if (this.nextArtifactAt < 0) {
+        this.nextArtifactAt = this.rng.range(45, 110)
+      }
+      this.nextArtifactAt -= dt
+      if (this.nextArtifactAt <= 0) {
+        this.artifactsFired++
+        this.nextArtifactAt = this.rng.range(240, 360)
+        if (this.artifactsFired === 1) {
+          // the counter runs backward for two seconds. gameplay continues.
+          this.ctx.hud.reverseFor(2)
+        } else {
+          // the frame holds; every sound continues. the picture blinked.
+          this.freezeT = 1.5
+          this.ctx.post.vhs.bumpGeneration(0.1)
+        }
+      }
+    }
+  }
+
+  private placePhone(spot: THREE.Vector3): void {
+    const { scene, interact, audio } = this.ctx
+    const group = new THREE.Group()
+    const deskMat = new THREE.MeshStandardMaterial({ color: 0x4f4233, roughness: 0.8 })
+    const desk = new THREE.Mesh(new THREE.BoxGeometry(1.2, 0.06, 0.65), deskMat)
+    desk.position.y = 0.7
+    const legGeo = new THREE.BoxGeometry(0.05, 0.7, 0.6)
+    const l1 = new THREE.Mesh(legGeo, deskMat)
+    l1.position.set(-0.55, 0.35, 0)
+    const l2 = new THREE.Mesh(legGeo, deskMat)
+    l2.position.set(0.55, 0.35, 0)
+    const phoneBase = new THREE.Mesh(
+      new THREE.BoxGeometry(0.2, 0.07, 0.24),
+      new THREE.MeshStandardMaterial({ color: 0x2b2b2e, roughness: 0.5 }),
+    )
+    phoneBase.position.set(-0.2, 0.765, 0)
+    // the handset, off the hook, on the desk, waiting
+    const handset = new THREE.Mesh(
+      new THREE.CapsuleGeometry(0.025, 0.16, 4, 8),
+      new THREE.MeshStandardMaterial({ color: 0x2b2b2e, roughness: 0.5 }),
+    )
+    handset.rotation.z = Math.PI / 2
+    handset.position.set(0.18, 0.75, 0.1)
+    group.add(desk, l1, l2, phoneBase, handset)
+    group.position.copy(spot)
+    group.rotation.y = this.rng.range(0, Math.PI * 2)
+    scene.add(group)
+
+    const hp = handset.getWorldPosition(new THREE.Vector3())
+    this.phoneHandle = audio.startDialTone(hp.x, hp.y, hp.z)
+    this.phoneAt = spot.clone()
+    interact.add({
+      object: handset,
+      label: 'HANG UP',
+      onUse: () => {
+        this.phoneHandle?.hangUp()
+        this.phoneHandle = null
+        handset.position.set(-0.2, 0.81, 0)
+        handset.rotation.set(0, 0, 0)
+      },
+    })
+  }
+
+  /** A barefoot trail on the carpet, wet enough to catch the light,
+   *  walking straight into a wall. Returns false to retry later. */
+  private placeFootprints(): boolean {
+    const spot = this.findFloorSpot(10, 14)
+    if (!spot) return false
+    // find a wall within 8m in some direction
+    const ray = new THREE.Raycaster()
+    ray.firstHitOnly = true
+    const colliders = this.ctx.world.collidersNear(spot.x, spot.z)
+    for (let attempt = 0; attempt < 6; attempt++) {
+      const a = this.rng.range(0, Math.PI * 2)
+      const dir = new THREE.Vector3(Math.sin(a), 0, Math.cos(a))
+      ray.set(new THREE.Vector3(spot.x, 0.6, spot.z), dir)
+      ray.far = 8
+      let hit: THREE.Intersection | null = null
+      for (const c of colliders) {
+        const h = ray.intersectObject(c, false)[0]
+        if (h && (!hit || h.distance < hit.distance)) hit = h
+      }
+      if (!hit || hit.distance < 3) continue
+      const n = hit.face?.normal
+      if (!n || Math.abs(n.y) > 0.3) continue
+
+      const mat = getFootprintMaterial()
+      const geo = new THREE.PlaneGeometry(0.11, 0.26)
+      const steps = Math.floor((hit.distance - 0.25) / 0.38)
+      for (let s = 0; s < steps; s++) {
+        const m = new THREE.Mesh(geo, mat)
+        m.rotation.x = -Math.PI / 2
+        m.rotation.z = -a + (s % 2 === 0 ? 0.07 : -0.07)
+        const lat = (s % 2 === 0 ? 1 : -1) * 0.09
+        m.position.set(
+          spot.x + dir.x * (0.3 + s * 0.38) - dir.z * lat,
+          0.008,
+          spot.z + dir.z * (0.3 + s * 0.38) + dir.x * lat,
+        )
+        this.ctx.scene.add(m)
+      }
+      return true
+    }
+    return false
   }
 
   // ---- notes ----
@@ -223,6 +386,15 @@ export class Narrative {
   private blackoutScheduled = false
   private broadcastFired = false
 
+  // ---- wave 3: kenopsia + impossible artifacts + the Manila Room ----
+  private manila: ManilaRoom | null = null
+  private phoneDone = false
+  private phoneHandle: { hangUp: () => void } | null = null
+  private phoneAt: THREE.Vector3 | null = null
+  private footprintsDone = false
+  private artifactsFired = 0
+  private nextArtifactAt = -1
+
   private descentUnlocked = false
 
   /** Reading note 7 unlocks the exit — or sheer distance walked, so a
@@ -231,7 +403,10 @@ export class Narrative {
     if (this.descentUnlocked) return
     this.descentUnlocked = true
     this.metaBeatAt = 8 // the tape acknowledges you, 8s after the descent unlocks
-    this.nearMissAt = this.rng.range(35, 55)
+    // looming telegraph: the sub swells for ~30s, holds, then RECEDES —
+    // "it passed; it's behind you now" — and THEN the near-miss crosses.
+    this.ctx.audio.loom(30, 8, 18)
+    this.nearMissAt = this.rng.range(64, 82)
     this.placeExit()
   }
 
@@ -454,6 +629,8 @@ export class Narrative {
         this.endingT = 0
         this.cinematic = true
         audio.silence(60)
+        // a floor that never stops falling, mixed under the dark
+        audio.startShepardDescent(9)
         this.fadeEl.classList.add('on')
       }
       return

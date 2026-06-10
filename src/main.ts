@@ -208,8 +208,10 @@ async function boot(): Promise<void> {
     lights.update(world, player.position.x, player.position.z, time)
     dust.update(dt, camera.position.x, camera.position.z, lights.lightLevel)
     debug.update(dt, player.position)
-    // "pausing the tape" freezes the frame; the world keeps making sound
-    if (!narrative.tapePaused) {
+    // "pausing the tape" freezes the frame; the world keeps making sound.
+    // narrative.freezeT is the impossible-artifact variant: the frame holds
+    // while every sound continues — the picture blinked, the world didn't.
+    if (!narrative.tapePaused && narrative.freezeT <= 0) {
       renderer.info.reset()
       post.composer.render(dt)
     }

@@ -233,6 +233,27 @@ export class DreadBed {
     this.hbVca.gain.setTargetAtTime(0, t + attack, release / 3)
   }
 
+  /**
+   * Looming telegraph (Neuhoff: rising intensity is hardwired as "approaching
+   * threat" and overestimated as closer than it is). The sub pad swells over
+   * ~rampS, holds, then RECEDES — and the recede is the trick: it reads as
+   * "it passed; it is behind you now". The scripted beat fires after.
+   */
+  loom(rampS = 35, holdS = 10, recedeS = 20): void {
+    const t = this.ctx.currentTime
+    const subTarget = 0.05 + this.dread * 0.13
+    const loomTarget = Math.min(0.3, subTarget * 2.4)
+    this.subAmGain.gain.cancelScheduledValues(t)
+    this.subAmOffset.offset.cancelScheduledValues(t)
+    this.subAmGain.gain.setTargetAtTime(loomTarget * 0.85, t, rampS / 3)
+    this.subAmOffset.offset.setTargetAtTime(loomTarget * 1.05, t, rampS / 3)
+    window.setTimeout(() => {
+      const t2 = this.ctx.currentTime
+      this.subAmGain.gain.setTargetAtTime(subTarget * 0.85, t2, recedeS / 3)
+      this.subAmOffset.offset.setTargetAtTime(subTarget * 1.05, t2, recedeS / 3)
+    }, (rampS + holdS) * 1000)
+  }
+
   /** SILENCE: cut everything fast. */
   silence(rampSecs: number): void {
     const t = this.ctx.currentTime

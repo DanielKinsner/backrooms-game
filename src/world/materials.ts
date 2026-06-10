@@ -544,6 +544,46 @@ export function getFloorArrowMaterial(): THREE.MeshStandardMaterial {
   return floorArrowMat
 }
 
+/** Wet bare footprint, glossy-dark on the carpet. They stop at a wall. */
+let footprintMat: THREE.MeshStandardMaterial | null = null
+export function getFootprintMaterial(): THREE.MeshStandardMaterial {
+  if (footprintMat) return footprintMat
+  const c = document.createElement('canvas')
+  c.width = 64
+  c.height = 128
+  const ctx = c.getContext('2d')!
+  ctx.fillStyle = 'rgba(34, 30, 22, 0.62)'
+  // sole
+  ctx.beginPath()
+  ctx.ellipse(32, 78, 14, 30, 0, 0, Math.PI * 2)
+  ctx.fill()
+  ctx.beginPath()
+  ctx.ellipse(30, 42, 11, 14, -0.12, 0, Math.PI * 2)
+  ctx.fill()
+  // toes
+  for (let i = 0; i < 5; i++) {
+    ctx.beginPath()
+    ctx.ellipse(14 + i * 9, 22 - Math.abs(i - 1.4) * 2.2, 3.6 - i * 0.35, 4.6 - i * 0.4, 0, 0, Math.PI * 2)
+    ctx.fill()
+  }
+  const tex = new THREE.CanvasTexture(c)
+  footprintMat = new THREE.MeshStandardMaterial({
+    map: tex,
+    transparent: true,
+    depthWrite: false,
+    roughness: 0.25, // wet sheen — the lights catch it
+    polygonOffset: true,
+    polygonOffsetFactor: -1,
+  })
+  return footprintMat
+}
+
+/** Manila Room walls: clean, calm, the one non-yellow surface that's kind. */
+export const manilaMaterial = new THREE.MeshStandardMaterial({
+  color: 0xe9deba,
+  roughness: 0.82,
+})
+
 /** Column stencil. Every column says LEVEL 3. Every single one. */
 let stencilMat: THREE.MeshStandardMaterial | null = null
 export function getStencilMaterial(): THREE.MeshStandardMaterial {

@@ -56,6 +56,10 @@ export class Director {
   /** Narrative flips this after note 1 is read — the note that explains it. */
   mimicEnabled = false
 
+  /** The Manila Room: while true, nothing fires, nothing stalks, nothing
+   *  re-stitches. The one place the building isn't looking. */
+  suppressed = false
+
   /** Hook for the OSD suite + tape damage: fires on every silent re-stitch. */
   onRestitch: (() => void) | null = null
 
@@ -108,6 +112,12 @@ export class Director {
     // Baseline dread creeps with time-in-maze; Task 9's acts will drive this harder.
     this.dread = Math.min(1, this.dread + dt * 0.0006)
     this.opts.audio?.setDread(this.dread)
+
+    if (this.suppressed) {
+      // hold all machinery; the cadence clock waits with the player
+      this.nextEventAt = Math.max(this.nextEventAt, this.time + 20)
+      return
+    }
 
     this.stepPresence(dt)
     this.stepTransients(dt)
