@@ -109,6 +109,31 @@ body {
   71%, 100% { opacity: 0.15; }
 }
 
+/* the camera has noticed the stillness: heartbeat double-blink */
+@keyframes rec-watch {
+  0%, 8% { opacity: 1; }
+  9%, 16% { opacity: 0.15; }
+  17%, 25% { opacity: 1; }
+  26%, 100% { opacity: 0.15; }
+}
+
+.hud-dot.watching {
+  animation: rec-watch 1.05s steps(1) infinite;
+}
+
+.hud-tracking {
+  position: absolute;
+  bottom: 36px;
+  left: 56px;
+  font-size: 24px;
+  letter-spacing: 3px;
+  animation: rec-blink 0.55s steps(1) infinite;
+}
+
+.hud-tracking.hidden {
+  display: none;
+}
+
 .hud-batt {
   position: absolute;
   top: 38px;

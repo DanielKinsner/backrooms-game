@@ -88,6 +88,12 @@ export class ChunkManager {
     this.salts.set(k, (this.salts.get(k) ?? 0) + 1)
   }
 
+  /** Zone of the chunk under a world position (audio: damp = drips). */
+  zoneAt(x: number, z: number): BuiltChunk['zone'] | null {
+    const [cx, cz] = this.chunkOf(x, z)
+    return this.chunks.get(ChunkManager.key(cx, cz))?.zone ?? null
+  }
+
   get chunkCount(): number {
     return this.chunks.size
   }

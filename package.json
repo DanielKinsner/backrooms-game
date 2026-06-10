@@ -9,6 +9,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "n8ao": "^1.10.1",
     "postprocessing": "^6.39.1",
     "three": "^0.184.0",
     "three-mesh-bvh": "^0.9.10"

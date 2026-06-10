@@ -66,6 +66,189 @@ export function getChalkArrowMaterial(): THREE.MeshStandardMaterial {
   return chalkMat
 }
 
+/**
+ * Pareidolia stain (DESIGN.md §8, research: Mandela-mechanism without the
+ * subject): two darker blobs at roughly interocular ratio and a mouth-length
+ * smear below — the viewer's own face detector does ALL the work. Deniable
+ * by design; reads as water damage when fixated.
+ */
+let pareidoliaMat: THREE.MeshStandardMaterial | null = null
+export function getPareidoliaMaterial(): THREE.MeshStandardMaterial {
+  if (pareidoliaMat) return pareidoliaMat
+  const S = 256
+  const c = document.createElement('canvas')
+  c.width = c.height = S
+  const ctx = c.getContext('2d')!
+  const blob = (x: number, y: number, r: number, a: number): void => {
+    const g = ctx.createRadialGradient(x, y, r * 0.15, x, y, r)
+    g.addColorStop(0, `rgba(58, 48, 26, ${a})`)
+    g.addColorStop(1, 'rgba(58, 48, 26, 0)')
+    ctx.fillStyle = g
+    ctx.beginPath()
+    ctx.arc(x, y, r, 0, Math.PI * 2)
+    ctx.fill()
+  }
+  // the stain itself (cover) — broad, watery
+  blob(128, 124, 118, 0.55)
+  blob(150, 170, 80, 0.35)
+  // the arrangement (payload): eyes at ~0.46 head-width separation, a mouth
+  blob(98, 102, 17, 0.75)
+  blob(160, 99, 15, 0.7)
+  ctx.save()
+  ctx.translate(126, 168)
+  ctx.scale(1.9, 0.55)
+  blob(0, 0, 16, 0.6)
+  ctx.restore()
+  const tex = new THREE.CanvasTexture(c)
+  pareidoliaMat = new THREE.MeshStandardMaterial({
+    map: tex,
+    transparent: true,
+    opacity: 0,
+    depthWrite: false,
+    roughness: 1,
+    polygonOffset: true,
+    polygonOffsetFactor: -1,
+  })
+  return pareidoliaMat
+}
+
+/**
+ * Wanderer scrawls (M.E.G. records: markings since the late 1960s — arrows,
+ * messages, unidentified runes; "much of this art is nonsensical"). A small
+ * pool of canvases: tallies, warnings, one rune, and EXIT :) pointing at
+ * nothing. Charcoal vs chalk = different eras of predecessor.
+ */
+let scrawlMats: THREE.MeshStandardMaterial[] | null = null
+export function getScrawlMaterials(): THREE.MeshStandardMaterial[] {
+  if (scrawlMats) return scrawlMats
+  let s = 4242
+  const rnd = (): number => {
+    s = (s * 16807) % 2147483647
+    return s / 2147483647
+  }
+  const make = (draw: (ctx: CanvasRenderingContext2D) => void): THREE.MeshStandardMaterial => {
+    const S = 256
+    const c = document.createElement('canvas')
+    c.width = c.height = S
+    const ctx = c.getContext('2d')!
+    ctx.lineCap = 'round'
+    draw(ctx)
+    const tex = new THREE.CanvasTexture(c)
+    tex.colorSpace = THREE.SRGBColorSpace
+    return new THREE.MeshStandardMaterial({
+      map: tex,
+      transparent: true,
+      depthWrite: false,
+      roughness: 1,
+      polygonOffset: true,
+      polygonOffsetFactor: -1,
+    })
+  }
+  const CHARCOAL = 'rgba(48, 40, 30,'
+  const CHALK = 'rgba(226, 219, 192,'
+  const text = (ctx: CanvasRenderingContext2D, lines: string[], color: string, size = 40): void => {
+    ctx.font = `${size}px "Special Elite", "Comic Sans MS", cursive`
+    for (let pass = 0; pass < 2; pass++) {
+      ctx.fillStyle = `${color} ${0.35 + pass * 0.25})`
+      lines.forEach((ln, i) => {
+        ctx.fillText(
+          ln,
+          26 + (rnd() - 0.5) * 5,
+          92 + i * (size + 14) + (rnd() - 0.5) * 5,
+        )
+      })
+    }
+  }
+  scrawlMats = [
+    // tally cluster — someone counted something here. it reads 23.
+    make((ctx) => {
+      ctx.strokeStyle = `${CHARCOAL} 0.55)`
+      for (let g = 0; g < 4; g++) {
+        const gx = 38 + g * 52
+        const gy = 110 + (rnd() - 0.5) * 14
+        ctx.lineWidth = 4.5
+        for (let i = 0; i < (g === 3 ? 3 : 4); i++) {
+          ctx.beginPath()
+          ctx.moveTo(gx + i * 11 + (rnd() - 0.5) * 3, gy + (rnd() - 0.5) * 4)
+          ctx.lineTo(gx + i * 11 + (rnd() - 0.5) * 3, gy + 52 + (rnd() - 0.5) * 4)
+          ctx.stroke()
+        }
+        if (g < 3) {
+          ctx.beginPath()
+          ctx.moveTo(gx - 6, gy + 44)
+          ctx.lineTo(gx + 42, gy + 8)
+          ctx.stroke()
+        }
+      }
+    }),
+    make((ctx) => text(ctx, ['KEEP', 'MOVING'], CHALK, 52)),
+    make((ctx) => text(ctx, ['NO DOORS', 'NO DOORS', 'no doors'], CHARCOAL, 34)),
+    make((ctx) => text(ctx, ['it hears', 'the hum', 'stop humming'], CHARCOAL, 32)),
+    make((ctx) => text(ctx, ['EXIT :)'], CHALK, 58)),
+    // the rune: recurring, unidentified, never referenced anywhere
+    make((ctx) => {
+      ctx.strokeStyle = `${CHARCOAL} 0.6)`
+      ctx.lineWidth = 6
+      ctx.beginPath()
+      ctx.moveTo(128, 36)
+      ctx.lineTo(70, 150)
+      ctx.lineTo(186, 150)
+      ctx.closePath()
+      ctx.moveTo(128, 36)
+      ctx.lineTo(128, 214)
+      ctx.moveTo(96, 188)
+      ctx.lineTo(160, 188)
+      ctx.stroke()
+    }),
+    make((ctx) => text(ctx, ['down', 'down', 'down down'], CHALK, 40)),
+  ]
+  return scrawlMats
+}
+
+/** Soft radial glow sprite for fixture halos + floor light pools. */
+let glowTex: THREE.CanvasTexture | null = null
+export function getGlowTexture(): THREE.CanvasTexture {
+  if (glowTex) return glowTex
+  const S = 128
+  const c = document.createElement('canvas')
+  c.width = c.height = S
+  const ctx = c.getContext('2d')!
+  const g = ctx.createRadialGradient(S / 2, S / 2, 2, S / 2, S / 2, S / 2)
+  g.addColorStop(0, 'rgba(255, 246, 214, 0.85)')
+  g.addColorStop(0.4, 'rgba(255, 244, 200, 0.28)')
+  g.addColorStop(1, 'rgba(255, 244, 200, 0)')
+  ctx.fillStyle = g
+  ctx.fillRect(0, 0, S, S)
+  glowTex = new THREE.CanvasTexture(c)
+  return glowTex
+}
+
+/** Shared additive materials so the blackout can starve every halo at once. */
+export const glowMaterials = {
+  halo: null as THREE.MeshBasicMaterial | null,
+  pool: null as THREE.MeshBasicMaterial | null,
+}
+export function getGlowMaterials(): { halo: THREE.MeshBasicMaterial; pool: THREE.MeshBasicMaterial } {
+  if (!glowMaterials.halo) {
+    glowMaterials.halo = new THREE.MeshBasicMaterial({
+      map: getGlowTexture(),
+      transparent: true,
+      opacity: 0.34,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+      side: THREE.DoubleSide,
+    })
+    glowMaterials.pool = new THREE.MeshBasicMaterial({
+      map: getGlowTexture(),
+      transparent: true,
+      opacity: 0.05,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+    })
+  }
+  return { halo: glowMaterials.halo, pool: glowMaterials.pool! }
+}
+
 const CARPET_PERIOD = 1.2
 const WALL_PERIOD = 2.4
 const CEILING_PERIOD = 3.6
@@ -212,6 +395,27 @@ export async function initWorldMaterials(): Promise<void> {
   m.carpetDamp.map = setupTiling(dampC, 1.6, true)
   m.carpetDamp.normalMap = setupTiling(dampN, 1.6)
   m.carpetDamp.normalScale.setScalar(0.8)
+
+  // Grime gradients: walls darken toward the carpet line (scuff, shadow,
+  // thirty-five years of shoulders) and slightly toward the ceiling. Chunk
+  // geometry is baked in world space (identity transforms), so `transformed`
+  // IS the world position — cheapest possible contact-occlusion fake.
+  m.wall.onBeforeCompile = (shader) => {
+    shader.vertexShader = shader.vertexShader
+      .replace('#include <common>', '#include <common>\nvarying float vGrimeY;')
+      .replace('#include <begin_vertex>', '#include <begin_vertex>\n  vGrimeY = transformed.y;')
+    shader.fragmentShader = shader.fragmentShader
+      .replace('#include <common>', '#include <common>\nvarying float vGrimeY;')
+      .replace(
+        '#include <map_fragment>',
+        `#include <map_fragment>
+  {
+    float lowGrime = 1.0 - 0.30 * smoothstep(0.62, 0.05, vGrimeY);
+    float highGrime = 1.0 - 0.16 * smoothstep(2.30, 2.78, vGrimeY);
+    diffuseColor.rgb *= lowGrime * highGrime;
+  }`,
+      )
+  }
 
   for (const mat of [m.carpet, m.wall, m.ceiling, m.carpetDamp]) mat.needsUpdate = true
 }

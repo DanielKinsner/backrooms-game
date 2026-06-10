@@ -1,6 +1,11 @@
 import * as THREE from 'three'
 import { CELL, CHUNK_CELLS, CHUNK_SIZE, CEIL_H, type ChunkData } from './gen'
-import { worldMaterials, getChalkArrowMaterial } from './materials'
+import {
+  worldMaterials,
+  getChalkArrowMaterial,
+  getScrawlMaterials,
+  getGlowMaterials,
+} from './materials'
 
 /**
  * Chunk geometry. All vertices are baked in WORLD space and UVs are the
@@ -77,6 +82,9 @@ export interface BuiltChunk {
 
 const fixtureGeo = new THREE.BoxGeometry(1.2, 0.06, 0.6)
 const arrowGeo = new THREE.PlaneGeometry(0.55, 0.55)
+const scrawlGeo = new THREE.PlaneGeometry(0.85, 0.85)
+const haloGeo = new THREE.PlaneGeometry(1.9, 1.1)
+const poolGeo = new THREE.PlaneGeometry(3.2, 2.6)
 
 interface WallFace {
   x: number
@@ -237,6 +245,23 @@ export function buildChunkMeshes(data: ChunkData): BuiltChunk {
     group.add(m)
   }
 
+  // Wanderer scrawls (canon: markings since the late 1960s — tallies,
+  // warnings, the rune). Rarer than arrows; one per ~3 chunks. The messages
+  // never help. That's canon too.
+  let scrawls = 0
+  const scrawlPool = getScrawlMaterials()
+  for (let i = 0; i < wallFaces.length && scrawls < 1; i++) {
+    const f = wallFaces[i]
+    if (f.len < 3.5 || h(i + 700) > 0.045) continue
+    scrawls++
+    const pick = Math.floor(h(i + 770) * scrawlPool.length) % scrawlPool.length
+    const m = new THREE.Mesh(scrawlGeo, scrawlPool[pick])
+    m.position.set(f.x + f.nx * 0.013, 1.18 + h(i + 740) * 0.45, f.z + f.nz * 0.013)
+    const ry = f.nx === 1 ? Math.PI / 2 : f.nx === -1 ? -Math.PI / 2 : f.nz === 1 ? 0 : Math.PI
+    m.rotation.set(0, ry, (h(i + 810) - 0.5) * 0.16, 'YXZ')
+    group.add(m)
+  }
+
   const geos: THREE.BufferGeometry[] = []
   const buckets: Array<[GeoAccum, THREE.Material]> = [
     [floor, worldMaterials.carpet],
@@ -266,6 +291,25 @@ export function buildChunkMeshes(data: ChunkData): BuiltChunk {
     })
     inst.instanceMatrix.needsUpdate = true
     group.add(inst)
+
+    // Volumetric fakes: a soft additive halo hugging each tube (light caught
+    // in the haze) + a faint warm pool on the carpet below. Both share two
+    // materials so the blackout can starve every halo with one opacity write.
+    const { halo, pool } = getGlowMaterials()
+    const haloInst = new THREE.InstancedMesh(haloGeo, halo, data.fixtures.length)
+    const poolInst = new THREE.InstancedMesh(poolGeo, pool, data.fixtures.length)
+    const e = new THREE.Euler()
+    data.fixtures.forEach((f, k) => {
+      e.set(-Math.PI / 2, 0, f.rotated ? Math.PI / 2 : 0)
+      q.setFromEuler(e)
+      m.compose(new THREE.Vector3(f.x, CEIL_H - 0.1, f.z), q, new THREE.Vector3(1, 1, 1))
+      haloInst.setMatrixAt(k, m)
+      m.compose(new THREE.Vector3(f.x, 0.012, f.z), q, new THREE.Vector3(1, 1, 1))
+      poolInst.setMatrixAt(k, m)
+    })
+    haloInst.instanceMatrix.needsUpdate = true
+    poolInst.instanceMatrix.needsUpdate = true
+    group.add(haloInst, poolInst)
   }
 
   // Collider: walls + pillars + floor + ceiling merged into one BVH mesh.

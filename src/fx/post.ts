@@ -10,17 +10,23 @@ import {
   SMAAEffect,
   VignetteEffect,
 } from 'postprocessing'
+// eslint-disable-next-line import/no-unresolved -- ships its own types
+import { N8AOPostPass } from 'n8ao'
 import { VHSEffect } from './vhs'
 
 /**
- * The grade IS the fidelity (market brief): bloom on emissive fixtures,
- * slight chromatic aberration, the VHS pass, film grain, vignette, SMAA.
- * Subtle and always-on; nothing here ever slams.
+ * The grade IS the fidelity (market brief): GTAO-class ambient occlusion,
+ * bloom on emissive fixtures, slight chromatic aberration, the VHS pass,
+ * film grain, vignette, SMAA. Subtle and always-on; nothing here ever slams.
+ *
+ * AO note: corners, ceiling-tile seams and baseboards going dark is the
+ * single biggest "this is a real place" upgrade a fog-lit box world can buy.
  */
 export interface PostStack {
   composer: EffectComposer
   vhs: VHSEffect
   bloom: BloomEffect
+  vignette: VignetteEffect
   setSize: (w: number, h: number) => void
 }
 
@@ -33,6 +39,18 @@ export function createPostStack(
     frameBufferType: THREE.HalfFloatType,
   })
   composer.addPass(new RenderPass(scene, camera))
+
+  // Screen-space AO (N8AO half-res): contact darkening where walls meet
+  // carpet and tiles meet walls. Fog already eats the distance, so a tight
+  // radius is both cheaper and more correct.
+  const ao = new N8AOPostPass(scene, camera, window.innerWidth, window.innerHeight)
+  ao.configuration.aoRadius = 1.6
+  ao.configuration.distanceFalloff = 1.2
+  ao.configuration.intensity = 2.6
+  ao.configuration.color = new THREE.Color(0x1f1a0e) // grime-brown, not dead black
+  ao.configuration.halfRes = true
+  ao.setQualityMode('Medium')
+  composer.addPass(ao)
 
   const bloom = new BloomEffect({
     intensity: 0.7,
@@ -67,6 +85,7 @@ export function createPostStack(
     composer,
     vhs,
     bloom,
+    vignette,
     setSize: (w, h) => composer.setSize(w, h),
   }
 }

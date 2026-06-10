@@ -172,6 +172,30 @@ export async function loadSampleBank(ctx: AudioContext): Promise<SampleBank> {
  * acoustic noise floor is rolled-off above ~2 kHz; pure white reads as hiss,
  * not as electrical hum.
  */
+/**
+ * Synthesized impulse response: exponentially-decaying noise with heavy
+ * high-frequency rolloff. Level 0 is carpet and drop tile — highs die fast,
+ * lows linger. Stereo decorrelation widens it without sounding "hall".
+ */
+export function makeImpulseResponse(ctx: AudioContext, seconds: number, decay: number): AudioBuffer {
+  const sampleRate = ctx.sampleRate
+  const len = Math.floor(sampleRate * seconds)
+  const buf = ctx.createBuffer(2, len, sampleRate)
+  for (let ch = 0; ch < 2; ch++) {
+    const data = buf.getChannelData(ch)
+    let last = 0
+    for (let i = 0; i < len; i++) {
+      const t = i / len
+      const w = Math.random() * 2 - 1
+      // progressively darker as it decays (carpet eats the highs first)
+      const k = 0.12 + t * 0.5
+      last = last * (1 - k) + w * k
+      data[i] = last * Math.pow(1 - t, decay) * 0.55
+    }
+  }
+  return buf
+}
+
 export function makeNoiseBuffer(ctx: AudioContext, seconds = 2): AudioBuffer {
   const sampleRate = ctx.sampleRate
   const len = Math.floor(sampleRate * seconds)

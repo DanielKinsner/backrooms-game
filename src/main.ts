@@ -11,6 +11,7 @@ import { CELL } from './world/gen'
 import { initWorldMaterials } from './world/materials'
 import { FixturePool } from './world/lighting'
 import { createPostStack } from './fx/post'
+import { DustMotes } from './fx/dust'
 import { CamcorderHud } from './ui/hud'
 import { InteractSystem, NoteOverlay } from './player/interact'
 import { AudioEngine } from './audio/engine'
@@ -36,15 +37,17 @@ async function boot(): Promise<void> {
 
   const camera = new THREE.PerspectiveCamera(66, window.innerWidth / window.innerHeight, 0.05, 120)
 
-  // Ambient base: warm from above (fixtures everywhere), carpet bounce from below.
-  scene.add(new THREE.HemisphereLight(0xfff1c9, 0x8a7c52, 0.72))
+  // Ambient base: fluorescent from above (mercury-green spike, never warm),
+  // carpet bounce from below. The blackout controller owns its intensity.
+  const hemi = new THREE.HemisphereLight(0xf6f4cd, 0x8a7c52, 0.72)
+  scene.add(hemi)
 
   await initWorldMaterials()
 
   const input = new Input(canvas)
   const player = new PlayerController(camera)
   const world = new ChunkManager(scene)
-  const lights = new FixturePool(scene)
+  const lights = new FixturePool(scene, hemi)
   const SPAWN_X = CELL * 4.5 // middle of the spawn pillar hall
   player.setSpawn(SPAWN_X, 0.5, SPAWN_X)
   world.ensureInitial(SPAWN_X, SPAWN_X)
@@ -56,7 +59,11 @@ async function boot(): Promise<void> {
   const notes = new NoteOverlay()
 
   const audio = new AudioEngine()
-  const director = new Director({ world, lights, audio, player })
+  const director = new Director({ world, lights, audio, player, scene })
+  const dust = new DustMotes(scene)
+
+  // the mimic learns the player's gait from the foley layer
+  audio.onPlayerStep = (sprinting): void => director.notePlayerStep(sprinting)
   const narrative = new Narrative({
     scene,
     world,
@@ -69,6 +76,14 @@ async function boot(): Promise<void> {
     post,
     input,
   })
+
+  // re-stitches mark the tape: the picture fails (so the world doesn't have
+  // to) and the burn-in clock silently loses half a minute.
+  director.onRestitch = (): void => {
+    hud.tapeJump()
+    post.vhs.trackingSurge(0.55)
+    post.vhs.bumpGeneration(0.05)
+  }
 
   overlay.addEventListener('click', () => {
     input.requestLock()
@@ -110,8 +125,10 @@ async function boot(): Promise<void> {
     audio,
     director,
     narrative,
+    dust,
     THREE,
     autopilot: false,
+    loop: null as Loop | null,
   }
 
   const loop = new Loop((dt, time) => {
@@ -127,7 +144,8 @@ async function boot(): Promise<void> {
         .concat(narrative.colliders)
       player.update(dt, input, colliders)
       interact.update(camera, input, !notes.reading && !justClosedNote)
-      hud.update(dt)
+      const spd = Math.hypot(player.velocity.x, player.velocity.z)
+      hud.update(dt, director.dread, spd > 0.25)
       director.update(dt)
 
       camera.getWorldDirection(_fwd)
@@ -152,11 +170,24 @@ async function boot(): Promise<void> {
         sprinting: player.sprinting,
         crouching: player.crouching,
         moving: horizSpeed > 0.05,
+        dampNear: world.zoneAt(player.position.x, player.position.z) === 'openDamp',
       })
+
+      // dread leans on the frame: fog thickens, the lens tightens, the
+      // vignette deepens — all at sub-perceptual rates (30s+ time constants)
+      const fog = scene.fog as THREE.FogExp2
+      fog.density = 0.034 * (1 + director.dread * 0.2 + Math.sin(time * 0.21) * 0.02)
+      player.dreadNarrow += (director.dread - player.dreadNarrow) * (1 - Math.exp(-0.033 * dt))
+      post.vignette.darkness = 0.52 + director.dread * 0.1
+
+      // the tape reacts to the presence before the player can name why
+      post.vhs.interference = Math.min(1, director.dread * 0.15 + director.presenceNearness * 0.6)
+      hud.setTracking(post.vhs.surging)
     }
     post.vhs.intensity = 1 + player.zoom * 0.55 // zoomed tape strains
     world.update(player.position.x, player.position.z)
     lights.update(world, player.position.x, player.position.z, time)
+    dust.update(dt, camera.position.x, camera.position.z, lights.lightLevel)
     debug.update(dt, player.position)
     // "pausing the tape" freezes the frame; the world keeps making sound
     if (!narrative.tapePaused) {
@@ -166,6 +197,7 @@ async function boot(): Promise<void> {
   })
 
   loop.start()
+  devHooks.loop = loop
 
   if (import.meta.env.DEV) {
     // Automation harness for headless playthrough validation (DESIGN.md §13.10).

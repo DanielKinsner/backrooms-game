@@ -39,6 +39,90 @@ analyser levels only); a real-GPU feel pass on Dan's machine. Optional
 future: Kane-style walkable intro hallway (slate intro shipped instead),
 GTAO, WebGPU/TSL port via the createRenderer seam.
 
+## 2026-06-10 — session 4 (the terror pass: research-driven escalation)
+
+81-finding research sweep (Backrooms canon, analog-horror grammar,
+psychoacoustics, WebGL horror rendering) synthesized into 27 ranked
+upgrades; the high-impact half shipped this session.
+
+### Terror
+- **The mimic** — note 1's promise kept: at dread, footsteps answer yours
+  (leather, pitched down, behind you); stop walking and they CONTINUE for
+  6–10 strides before stopping. Gated on noise YOU made (retroactive
+  hearing, per the original 4chan post). Max 3 episodes/run.
+- **Blackout** — the earned lights-out: every fixture dies 9–12 s
+  (hum dies with them — it was always the lights' voice), one unhurried
+  impact mid-dark, plasma re-strike stutter on recovery. Scheduled ~30 s
+  after reading "when the lights go brown, count the seconds."
+- **Cone-of-confusion presence** — face the sound and it re-mirrors
+  behind your facing axis. You can never turn fast enough.
+- **Silence intruders** — something lands INSIDE each silence event:
+  a far creak the first time; a wet exhale 0.5 m behind your shoulder
+  the second (misophonia research: highest terror-per-byte available).
+- **Pareidolia decals** — stains with almost-faces, peripheral-only,
+  gone when fixated or approached. Max 3/run.
+- **New wrongness events** — distant door closes (THERE ARE NO DOORS),
+  ceiling ticks directly overhead, hum spectral-narrowing (the building
+  swallows its own voice), peripheral-only fixture dims that abort if
+  you look.
+- **OSD corruption** — the burn-in lies: clock silently loses 20–40 s on
+  every re-stitch; single-frame timestamp anomalies at high dread
+  (AM 0:00:00 / JUN.11 2002 / AUG.04 1987); REC dot double-blinks after
+  45 s of stillness (the camera noticed); battery drains visibly.
+
+### Visual
+- N8AO ambient occlusion (half-res, grime-brown), additive fixture halos
+  + carpet light pools (blackout-aware), 220 drifting dust motes,
+  baseboard/ceiling grime gradients injected into the wall shader,
+  dread-driven fog density + FOV compression + vignette deepening.
+- VHS shader rewrite: true luma/chroma separation (right-smeared chroma),
+  halation fringe, interlace twitter, gate weave, generation-loss ratchet
+  (acts + re-stitches make the tape permanently worse), tracking-surge
+  API (the director tears the frame to mask re-stitches), permanent tape
+  crease after the meta-beat, rolling interference band near the
+  presence, green-spike CRI grade (mercury line; red dies to brown),
+  IGN dither (kills fog banding, reads as grain).
+- Quake lightstyle 10 flicker for nervous fixtures; 120 Hz micro-ripple
+  on all tubes; green-contaminated tube color (0xeef3c4).
+
+### Audio
+- Generated-IR reverb send (carpet-deadened, zero bytes downloaded),
+  wow & flutter on the ambience bus (deepens with dread), 18.98 Hz hum
+  amplitude flutter (the Tandy frequency — felt before noticed),
+  synthesized drips in damp zones / ballast ticks on nervous fixtures /
+  wet exhale / swallow, EAS broadcast leak one-shot (853+960 Hz through
+  a wall cavity you can never reach), dread-driven breath (audible past
+  0.75 without sprinting).
+
+### Lore
+- Notes audit: pages numbered with gaps (missing pages never exist),
+  "the hum is 19", "avoid the manager's office", final note cuts off
+  mid-word; **the live lie** — page 12 reads "the hum gets louder near
+  exits." until the meta-beat, then "near you." on re-read.
+- Wanderer scrawls: tallies (reads 23), KEEP MOVING, NO DOORS, the
+  recurring rune, EXIT :) pointing at a blank wall.
+- Ending slate gains: CLASSIFICATION: SAFE · SECURE · ENTITY COUNT
+  UNCONFIRMED.
+
+### Validated (this session)
+- tsc + prod build clean. Full organic playbot E2E: 8 notes, descent,
+  ending reached, ZERO console errors (blackout fired mid-run).
+- Audio smoke: every new voice fired with ctx running, no exceptions.
+- Mimic verified end-to-end: idle → mirror → tail-after-stop → idle.
+- Pareidolia placement verified in corridors.
+- Visual captures: docs/shots/wip-*.jpg (hall, blackout, surge, grade).
+- New automation: Loop.step() synchronous driver (immune to hidden-tab
+  timer throttling), hidden-tab catch-up ticking, scripts/shot-server.mjs
+  canvas capture rig.
+
+### Next session candidates (from research, deferred)
+Manila Room (the only mercy), kenopsia props (dial-tone phone, dying
+CRT, wet footprints), P.T. loop wing via salt-pinning, Red Room glimpse
++ tally 74, impossible artifacts (counter reversal, freeze, foreign
+insert), looming telegraph ramps + Shepard descent finale, blackout
+ZONE region (ankle-deep fluid), found photographs (pre-memory + the
+impossible angle), beat-pool illegibility (6 authored, 3 per seed).
+
 ### Original backlog (now resolved except as noted)
 1. **Chalk arrows** — notes 1 & 7 reference arrows on walls; they don't exist
    visually yet. Canvas-chalk decals on walls along a lying guidance path. HIGH.

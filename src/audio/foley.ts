@@ -35,6 +35,9 @@ export class Foley {
   private distAccum = 0
   private lastIndex = -1
 
+  /** Fired on every footfall — the director's mimic learns the gait from this. */
+  onStep: ((sprinting: boolean) => void) | null = null
+
   // --- Breath ---
   private readonly breathGain: GainNode
   private readonly breathFilter: BiquadFilterNode
@@ -85,6 +88,7 @@ export class Foley {
     onGround: boolean,
     sprinting: boolean,
     crouching: boolean,
+    dread = 0,
   ): void {
     // --- Footstep trigger via distance accumulation ---
     if (moving && onGround && speed > 0.05) {
@@ -93,6 +97,7 @@ export class Foley {
       if (this.distAccum >= stride) {
         this.distAccum -= stride
         this.playStep(sprinting, crouching)
+        this.onStep?.(sprinting)
       }
     } else {
       // Slowly drain the accumulator when stopped so the next step doesn't fire
@@ -105,7 +110,12 @@ export class Foley {
     else this.sprintTime = Math.max(0, this.sprintTime - dt) // ~8s recovery if we damp
 
     // After 4s of sprinting, breath fades in; over ~8s of rest, it fades out.
-    const target = this.sprintTime < 4 ? 0 : Math.min(1, (this.sprintTime - 4) / 6)
+    const sprintTarget = this.sprintTime < 4 ? 0 : Math.min(1, (this.sprintTime - 4) / 6)
+    // Late in the arc the breath no longer needs exertion: past dread 0.75
+    // the operator is audibly not okay, standing still. (The camera registers
+    // the operator's state — found-footage canon.)
+    const dreadTarget = dread > 0.75 ? ((dread - 0.75) / 0.25) * 0.55 : 0
+    const target = Math.max(sprintTarget, dreadTarget)
     // Exponential approach (frame-rate independent).
     const k = 1 - Math.exp(-1.0 * dt)
     this.stamina += (target - this.stamina) * k
@@ -116,7 +126,8 @@ export class Foley {
     this.breathLfoGain.gain.setTargetAtTime(breathPeak * 0.9, t, 0.4)
     this.breathLfoOffset.offset.setTargetAtTime(breathPeak * 0.5, t, 0.4)
     // Rate of breathing scales with stamina: 0.35 → 0.85 Hz (≈21 → 51/min).
-    const rate = 0.35 + this.stamina * 0.5
+    // Dread adds a fine tremble to the rate — the lungs won't quite settle.
+    const rate = 0.35 + this.stamina * 0.5 + dreadTarget * Math.sin(t * 2.7) * 0.06
     this.breathLfo.frequency.setTargetAtTime(rate, t, 0.4)
   }
 

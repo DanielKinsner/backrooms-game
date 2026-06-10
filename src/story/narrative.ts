@@ -1,5 +1,5 @@
 import * as THREE from 'three'
-import { NOTES, ENDING_LINES, INTRO_LINES } from './notes'
+import { TRAIL_NOTES, TRAIL_NOTE_6_AFTER, FINAL_NOTE, ENDING_LINES, INTRO_LINES } from './notes'
 import type { ChunkManager } from '../world/manager'
 import type { PlayerController } from '../player/controller'
 import type { InteractSystem, NoteOverlay } from '../player/interact'
@@ -30,7 +30,7 @@ interface Ctx {
   input: Input
 }
 
-const NOTE_DISTANCES = [30, 110, 220, 350, 500, 670, 860]
+const NOTE_DISTANCES = [30, 110, 200, 290, 390, 500, 640, 790, 950]
 
 export class Narrative {
   /** Distance walked (m); the story's clock. */
@@ -121,9 +121,16 @@ export class Narrative {
     // acts drive the dread floor
     director.setDreadFloor(Math.min(0.1 + this.notesRead * 0.09 + this.walked * 0.00018, 0.95))
 
-    // tape strain rises late
+    // tape strain rises late; the generation ratchet never goes back
     if (this.notesRead >= 6) post.vhs.intensity = Math.max(post.vhs.intensity, 1.18)
-    void audio
+    post.vhs.generation = Math.min(0.85, this.notesRead * 0.07 + this.walked * 0.00008)
+
+    // one-shot: an emergency broadcast leaking through a wall cavity the
+    // maze never lets you reach. an outside world tried to warn someone.
+    if (!this.broadcastFired && this.walked > 620) {
+      this.broadcastFired = true
+      audio.playBroadcastLeak()
+    }
     void hud
   }
 
@@ -135,7 +142,13 @@ export class Narrative {
     const spot = this.findFloorSpot(9, 15)
     if (!spot) return
     const idx = this.placedNotes++
-    this.spawnNote(spot, NOTES[idx])
+    // page 12 is the live lie: one line reads differently after the meta-beat.
+    // re-reading is the only way to catch it, and nobody will believe them.
+    const text =
+      idx === 6
+        ? (): string => (this.metaBeatDone ? TRAIL_NOTE_6_AFTER : TRAIL_NOTES[6])
+        : TRAIL_NOTES[idx]
+    this.spawnNote(spot, text)
     // D. left supplies sometimes. the bottles smell like almonds.
     if (idx >= 1 && this.rng.chance(0.45)) {
       this.spawnBottle(spot.x + this.rng.range(-0.9, 0.9), spot.z + this.rng.range(-0.9, 0.9))
@@ -162,13 +175,14 @@ export class Narrative {
       label: 'DRINK',
       onUse: () => {
         this.ctx.scene.remove(bottle)
+        this.ctx.audio.playSwallow()
         this.ctx.director.relief(0.18)
         this.ctx.player.steadyT = 40
       },
     })
   }
 
-  private spawnNote(at: THREE.Vector3, text: string): void {
+  private spawnNote(at: THREE.Vector3, text: string | (() => string)): void {
     const geo = new THREE.PlaneGeometry(0.21, 0.297)
     geo.rotateZ(this.rng.range(0, Math.PI * 2))
     const mesh = new THREE.Mesh(
@@ -183,7 +197,7 @@ export class Narrative {
       label: 'READ',
       once: false,
       onUse: () => {
-        this.ctx.notesOverlay.show(text)
+        this.ctx.notesOverlay.show(typeof text === 'function' ? text() : text)
         if (!mesh.userData.read) {
           mesh.userData.read = true
           this.onNoteRead()
@@ -194,8 +208,20 @@ export class Narrative {
 
   private onNoteRead(): void {
     this.notesRead++
+    // note 1 explains the matching footsteps; from here the game may keep
+    // the promise. (the phenomenon never precedes its own explanation.)
+    if (this.notesRead >= 1) this.ctx.director.mimicEnabled = true
+    // page 11: "when the lights go brown, count the seconds." the real
+    // blackout arrives a half-minute after reading it. it was counting too.
+    if (this.notesRead === 6 && !this.blackoutScheduled) {
+      this.blackoutScheduled = true
+      window.setTimeout(() => this.ctx.director.blackout(), (25 + this.rng.range(0, 20)) * 1000)
+    }
     if (this.notesRead >= 7) this.unlockDescent()
   }
+
+  private blackoutScheduled = false
+  private broadcastFired = false
 
   private descentUnlocked = false
 
@@ -297,10 +323,13 @@ export class Narrative {
     hud.setRecLabel('PLAY ►')
     hud.setStamp('JUN.12 2002', 'AM 6:42:00')
     post.vhs.intensity = 2.6
+    post.vhs.trackingSurge(1)
     audio.playUi('glitch', 0.5)
     window.setTimeout(() => {
       hud.setRecLabel('REC')
       post.vhs.intensity = 1.18
+      // the tape was wounded in that moment. it never heals.
+      post.vhs.enableCrease()
     }, 1500)
   }
 
@@ -402,7 +431,7 @@ export class Narrative {
     const noteAt = spot.clone()
     noteAt.x += Math.sin(yaw) * 2.2
     noteAt.z += Math.cos(yaw) * 2.2
-    this.spawnNote(noteAt, NOTES[7])
+    this.spawnNote(noteAt, FINAL_NOTE)
     const cam = new THREE.Mesh(
       new THREE.BoxGeometry(0.24, 0.12, 0.12),
       new THREE.MeshStandardMaterial({ color: 0x232323, roughness: 0.6 }),

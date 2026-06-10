@@ -59,6 +59,8 @@ export class PlayerController {
   frozen = false
   /** Seconds of almond-water steadiness left (damps handheld sway). */
   steadyT = 0
+  /** Dread-driven FOV compression 0..1 (sub-perceptual; ~3.5° at full). */
+  dreadNarrow = 0
 
   constructor(private readonly camera: THREE.PerspectiveCamera) {}
 
@@ -131,7 +133,10 @@ export class PlayerController {
   private updateZoom(dt: number, input: Input): void {
     const target = input.isMouseDown(2) ? 1 : 0
     this.zoom += (target - this.zoom) * (1 - Math.exp(-9 * dt))
-    const fov = THREE.MathUtils.lerp(66, 30, this.zoom)
+    // dread quietly tightens the frame (research: players fixate centrally
+    // under threat; the lens agreeing with them is felt, never seen)
+    const base = 66 - this.dreadNarrow * 3.5
+    const fov = THREE.MathUtils.lerp(base, 30, this.zoom)
     if (Math.abs(this.camera.fov - fov) > 0.01) {
       this.camera.fov = fov
       this.camera.updateProjectionMatrix()

@@ -36,6 +36,8 @@ class HumVoice {
   private readonly lfo: OscillatorNode
   private readonly lfoGain: GainNode
   private readonly lfoOffset: ConstantSourceNode
+  private breathLfo!: OscillatorNode
+  private breathGain!: GainNode
   private readonly lowpass: BiquadFilterNode
   private readonly noiseSrc: AudioBufferSourceNode
   private readonly noiseGain: GainNode
@@ -77,6 +79,17 @@ class HumVoice {
     this.lfoOffset.offset.value = 1.0
     this.lfoOffset.connect(this.mix.gain)
 
+    // 18.98 Hz amplitude flutter — the Tandy infrasound frequency, delivered
+    // as modulation on an audible carrier because no laptop speaker can emit
+    // 19 Hz directly. Depth 0 by default; the director breathes it in slowly
+    // before beats. Felt before noticed.
+    this.breathLfo = ctx.createOscillator()
+    this.breathLfo.type = 'sine'
+    this.breathLfo.frequency.value = 18.98
+    this.breathGain = ctx.createGain()
+    this.breathGain.gain.value = 0
+    this.breathLfo.connect(this.breathGain).connect(this.mix.gain)
+
     for (let i = 0; i < HARMONIC_FREQS.length; i++) {
       const osc = ctx.createOscillator()
       osc.type = 'sine'
@@ -101,8 +114,20 @@ class HumVoice {
     const t = ctx.currentTime
     this.lfo.start(t)
     this.lfoOffset.start(t)
+    this.breathLfo.start(t)
     this.noiseSrc.start(t)
     for (const osc of this.oscs) osc.start(t)
+  }
+
+  /** 18.98 Hz flutter depth 0..1 (scaled to safe modulation range). */
+  setBreath(ctx: AudioContext, depth: number): void {
+    this.breathGain.gain.setTargetAtTime(depth * 0.45, ctx.currentTime, 8)
+  }
+
+  /** Spectral narrowing: 0 = open (1.2 kHz), 1 = swallowed (~320 Hz). */
+  setMuffle(ctx: AudioContext, v: number): void {
+    const f = 1200 - v * 880
+    this.lowpass.frequency.setTargetAtTime(f, ctx.currentTime, 1.2)
   }
 
   /** Place this voice at a world fixture position. y is ceiling height. */
@@ -252,6 +277,10 @@ class HumWash {
     for (const osc of this.oscs) osc.detune.setTargetAtTime(globalCents, t, 0.08)
   }
 
+  setMuffle(ctx: AudioContext, v: number): void {
+    this.lowpass.frequency.setTargetAtTime(900 - v * 640, ctx.currentTime, 1.2)
+  }
+
   silence(ctx: AudioContext, ms = 80): void {
     const t = ctx.currentTime
     this.out.gain.cancelScheduledValues(t)
@@ -376,6 +405,17 @@ export class HumLayer {
       if (slot.fixtureKey) slot.voice.applyDetune(this.ctx, total)
     }
     this.wash.applyDetune(this.ctx, total)
+  }
+
+  /** Spectral narrowing 0..1 — the building swallowing its own voice. */
+  setMuffle(v: number): void {
+    for (const slot of this.voices) slot.voice.setMuffle(this.ctx, v)
+    this.wash.setMuffle(this.ctx, v)
+  }
+
+  /** 18.98 Hz flutter depth 0..1, ramped over ~30 s by the slow time constant. */
+  setBreath(depth: number): void {
+    for (const slot of this.voices) slot.voice.setBreath(this.ctx, depth)
   }
 
   /** SILENCE: ramp every voice + wash to 0 fast. */
