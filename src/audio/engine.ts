@@ -297,6 +297,8 @@ export class AudioEngine {
         glitches: [],
         phoneClick: null,
         phoneDead: null,
+        drips: [],
+        splash: null,
       }
     }
 
@@ -479,6 +481,17 @@ export class AudioEngine {
   /** The poolrooms' signature scare: a splash with no swimmer. */
   playSplash(x: number, z: number): void {
     if (!this.ctx || !this.noiseBuf) return
+    // the sampled splash, when we have it — something real went under
+    if (this.samples?.splash) {
+      this.playBufferAt(this.samples.splash, x, 0, z, 0.5, 50, 0.96 + Math.random() * 0.08)
+      for (const dt0 of [0.6, 1.0, 1.5]) {
+        window.setTimeout(
+          () => this.playDrip(x + (Math.random() - 0.5) * 2, z + (Math.random() - 0.5) * 2),
+          dt0 * 1000,
+        )
+      }
+      return
+    }
     const ctx = this.ctx
     const t = ctx.currentTime
     const src = ctx.createBufferSource()
@@ -681,9 +694,17 @@ export class AudioEngine {
     this.cleanup(src, [hp, vca, panner], t + 0.15)
   }
 
-  /** Water (it is not water) hitting wet carpet: pitch-dropping sine blip. */
+  /** Water (it is not water) hitting wet carpet: pitch-dropping sine blip.
+   *  When the sampled drips are loaded, most drips are real — the synth
+   *  blip stays in rotation so the ear can never quite file the sound. */
   playDrip(x: number, z: number): void {
     if (!this.ctx) return
+    const drips = this.samples?.drips
+    if (drips && drips.length > 0 && Math.random() < 0.65) {
+      const buf = drips[Math.floor(Math.random() * drips.length)]
+      this.playBufferAt(buf, x, 0.05, z, 0.16 + Math.random() * 0.08, 30, 0.9 + Math.random() * 0.2)
+      return
+    }
     const ctx = this.ctx
     const osc = ctx.createOscillator()
     osc.type = 'sine'

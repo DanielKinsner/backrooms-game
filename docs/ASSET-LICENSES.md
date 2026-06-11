@@ -57,6 +57,9 @@ are NOT CC0: do not extract them from this repo for reuse elsewhere.
 |---|---|---|---|
 | Receiver click | "Telephone Click" (FOUR Editors / Hollywood Essentials) | HP 180 Hz, LP 6.5 kHz, mono, ogg q4 | `public/audio/phone/click.ogg` |
 | Dead line | "Telephone Dead Line" (FOUR Editors / Hollywood Essentials) | telephone band 300–3400 Hz, −2 dB, mono | `public/audio/phone/deadline.ogg` |
+| Drip A | "Small Drop" (FOUR Editors / Life on Planet Earth) | trim 1.2 s, HP 250 / LP 7k, mono | `public/audio/water/drip1.ogg` |
+| Drip B | "Drop" (FOUR Editors / Life on Planet Earth) | HP 250 / LP 7k, mono | `public/audio/water/drip2.ogg` |
+| Splash, no swimmer | "Stone in Water" (FOUR Editors / Life on Planet Earth) | pitched −14%, LP 4.5k, mono | `public/audio/water/splash.ogg` |
 
 ## Fonts — Google Fonts (SIL OFL 1.1)
 
