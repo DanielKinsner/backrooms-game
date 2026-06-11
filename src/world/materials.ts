@@ -862,7 +862,7 @@ export function initWingMaterials(): void {
 
 const CARPET_PERIOD = 1.2
 const WALL_PERIOD = 2.4
-const CEILING_PERIOD = 3.6
+const CEILING_PERIOD = 2.4 // stained set carries 2x2 panels → 1.2 m tiles
 
 function setupTiling(tex: THREE.Texture, period: number, srgb = false): THREE.Texture {
   tex.wrapS = tex.wrapT = THREE.RepeatWrapping
@@ -971,10 +971,13 @@ export async function initWorldMaterials(): Promise<void> {
       load('carpet/ao.jpg'),
       load('wall/normal.jpg'),
       load('wall/rough.jpg'),
-      load('ceiling/color.jpg'),
-      load('ceiling/normal.jpg'),
-      load('ceiling/rough.jpg'),
-      load('ceiling/ao.jpg'),
+      // TAPE 2: Daniel's generated stained drop-tile set replaces the
+      // clean OfficeCeiling001 — the stains were tinted on in-shader
+      // before; now they're real and they don't repeat with the grime.
+      load('ceiling_stained/color.jpg'),
+      load('ceiling_stained/normal.jpg'),
+      load('ceiling_stained/rough.jpg'),
+      load('ceiling_stained/ao.jpg'),
       load('carpet_damp/color.jpg'),
       load('carpet_damp/normal.jpg'),
     ])
@@ -1001,7 +1004,7 @@ export async function initWorldMaterials(): Promise<void> {
   m.ceiling.normalScale.setScalar(0.7)
   m.ceiling.roughnessMap = setupTiling(ceilR, CEILING_PERIOD)
   m.ceiling.aoMap = setupTiling(ceilAO, CEILING_PERIOD)
-  m.ceiling.color.set(0xcfc4a2) // grime tint over the clean white tiles
+  m.ceiling.color.set(0xe6e0c8) // light tint only — the stains are baked in now
 
   m.carpetDamp.map = setupTiling(dampC, 1.6, true)
   m.carpetDamp.normalMap = setupTiling(dampN, 1.6)
