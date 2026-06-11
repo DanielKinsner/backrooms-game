@@ -66,6 +66,8 @@ are NOT CC0: do not extract them from this repo for reuse elsewhere.
 | Echo hit (bottle) | "06 Distant Bottle Hit" (FILM CRUX SINGULARITY 2 / Echo Hits) | trim 4.5 s, LP 3.8k, −4 dB, fade, mono | `public/audio/impacts/echo_bottle.ogg` |
 | Echo hit (silo) | "13 Silo Hit" (FILM CRUX SINGULARITY 2 / Echo Hits) | trim 5 s, pitched −5%, LP 3k, −4 dB, mono | `public/audio/impacts/echo_silo.ogg` |
 | Echo hit (dungeon) | "21 Dungeon Hit" (FILM CRUX SINGULARITY 2 / Echo Hits) | trim 5 s, LP 2.8k, −4 dB, fade, mono | `public/audio/impacts/echo_dungeon.ogg` |
+| Pause button down | "Click-1" (FOUR Editors / Vintage SFX) | 200 Hz–7.5 kHz band, −3 dB, mono | `public/audio/ui/pause_down.ogg` |
+| Pause button up | "Heavy-Click" (FOUR Editors / Vintage SFX) | trim 0.8 s, 180 Hz–6.5 kHz, −5 dB, mono | `public/audio/ui/pause_up.ogg` |
 
 ## Fonts — Google Fonts (SIL OFL 1.1)
 

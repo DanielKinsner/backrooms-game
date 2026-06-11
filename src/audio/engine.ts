@@ -300,6 +300,8 @@ export class AudioEngine {
         drips: [],
         splash: null,
         wade: null,
+        pauseDown: null,
+        pauseUp: null,
       }
     }
 
@@ -866,8 +868,21 @@ export class AudioEngine {
     this.respForced = on
   }
 
-  /** Narrative tells us when the tape is "paused" (held Q). */
+  /** Narrative tells us when the tape is "paused" (held Q). The transport
+   *  button is mechanical — you can hear your own thumb on the deck. */
   setTapePaused(v: boolean): void {
+    if (v !== this.tapePaused && this.ctx && this.samples) {
+      const buf = v ? this.samples.pauseDown : this.samples.pauseUp
+      if (buf) {
+        const src = this.ctx.createBufferSource()
+        src.buffer = buf
+        const g = this.ctx.createGain()
+        g.gain.value = 0.5
+        src.connect(g).connect(this.uiBus)
+        src.start()
+        this.cleanup(src, [g], this.ctx.currentTime + buf.duration + 0.1)
+      }
+    }
     this.tapePaused = v
   }
 

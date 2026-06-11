@@ -88,6 +88,10 @@ const DRIP_FILES = ['audio/water/drip1.ogg', 'audio/water/drip2.ogg'] as const
 const SPLASH_FILE = 'audio/water/splash.ogg'
 const WADE_FILE = 'audio/water/wade.ogg' // foley grains a random slice per step
 
+// Camcorder transport buttons (processed vintage-camera clicks)
+const PAUSE_DOWN_FILE = 'audio/ui/pause_down.ogg'
+const PAUSE_UP_FILE = 'audio/ui/pause_up.ogg'
+
 const GLITCH_FILES = [
   'audio/glitch/lowDown.ogg',
   'audio/glitch/lowRandom.ogg',
@@ -118,6 +122,8 @@ export interface SampleBank {
   drips: AudioBuffer[]
   splash: AudioBuffer | null
   wade: AudioBuffer | null
+  pauseDown: AudioBuffer | null
+  pauseUp: AudioBuffer | null
 }
 
 async function tryLoad(ctx: AudioContext, path: string): Promise<AudioBuffer | null> {
@@ -158,6 +164,8 @@ export async function loadSampleBank(ctx: AudioContext): Promise<SampleBank> {
     drips,
     splash,
     wade,
+    pauseDown,
+    pauseUp,
   ] = await Promise.all([
     loadList(ctx, FOOTSTEP_FILES),
     loadList(ctx, FOOTSTEP_LEATHER_FILES),
@@ -181,6 +189,8 @@ export async function loadSampleBank(ctx: AudioContext): Promise<SampleBank> {
     loadList(ctx, DRIP_FILES),
     tryLoad(ctx, SPLASH_FILE),
     tryLoad(ctx, WADE_FILE),
+    tryLoad(ctx, PAUSE_DOWN_FILE),
+    tryLoad(ctx, PAUSE_UP_FILE),
   ])
 
   return {
@@ -199,6 +209,8 @@ export async function loadSampleBank(ctx: AudioContext): Promise<SampleBank> {
     drips,
     splash,
     wade,
+    pauseDown,
+    pauseUp,
   }
 }
 
