@@ -1,5 +1,21 @@
 # Worklog
 
+## 2026-06-10 — sessions 5–6 (branch `tape-2`: owner assets)
+
+Twelve small commits. Audio: owner-licensed packs integrated as processed
+OGG derivatives (phone receiver set, real drips + the splash, granular
+wading, two atmos drones, three echo hits, mechanical pause button) —
+synth fallbacks kept everywhere. Textures: Daniel's self-generated
+`NOCLIP_Backrooms_TexturePack_2K_UE5` adopted for the stained ceiling,
+fixture diffuser (+emissive mask), garage concrete, flooded-zone floor
+and walls, office drywall, and a hybrid wallpaper (generated base, canon
+arrow motif drawn on top — the motif is gameplay-load-bearing). Not
+adopted: generated carpet (photoscan keeps better close-range fiber),
+rusted pipe metal (reserved for Level 2), decal atlas (text hints at the
+Q-pause — banned by Spec C). Verified: tsc + prod build clean, all 10
+audio buffers decode, all three re-skinned zones stream textured
+materials, fixture map+emissiveMap live, playbot soak clean, 180 fps.
+
 ## 2026-06-10 — session 4 (branch `tape-2`: the EXPANSION.md build)
 
 > ⚠️ SPOILERS BELOW — this entry stays systems-level on purpose.
