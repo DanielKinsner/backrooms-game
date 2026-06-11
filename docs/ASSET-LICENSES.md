@@ -61,6 +61,8 @@ are NOT CC0: do not extract them from this repo for reuse elsewhere.
 | Drip B | "Drop" (FOUR Editors / Life on Planet Earth) | HP 250 / LP 7k, mono | `public/audio/water/drip2.ogg` |
 | Splash, no swimmer | "Stone in Water" (FOUR Editors / Life on Planet Earth) | pitched −14%, LP 4.5k, mono | `public/audio/water/splash.ogg` |
 | Wading bed (foley grains) | "Moving Through Water" (FOUR Editors / Life on Planet Earth) | trim 8 s, pitched −6%, 120 Hz–3.2 kHz band, mono | `public/audio/water/wade.ogg` |
+| Atmos drone A | "31 Subtle Drone" (FILM CRUX SINGULARITY 2 / Drones) | ×3 loop-extend, LP 2.6k, −3 dB, stereo | `public/audio/ambient/drone_subtle.ogg` |
+| Atmos drone B | "27 Muffled Drone" (FILM CRUX SINGULARITY 2 / Drones) | ×3 loop-extend, pitched −8%, LP 1.9k, −3 dB | `public/audio/ambient/drone_muffled.ogg` |
 
 ## Fonts — Google Fonts (SIL OFL 1.1)
 

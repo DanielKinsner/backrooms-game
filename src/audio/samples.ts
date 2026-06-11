@@ -31,6 +31,9 @@ const AMBIENT_FILES = {
   atmos2: 'audio/ambient/atmoseerie02.flac',
   atmos3: 'audio/ambient/atmoseerie03.flac',
   atmos4: 'audio/ambient/atmoseerie04.flac',
+  // TAPE 2: two processed drones widen the rotation (anti-habituation)
+  atmos5: 'audio/ambient/drone_subtle.ogg',
+  atmos6: 'audio/ambient/drone_muffled.ogg',
 } as const
 
 const IMPACT_FILES = [
@@ -161,6 +164,8 @@ export async function loadSampleBank(ctx: AudioContext): Promise<SampleBank> {
       AMBIENT_FILES.atmos2,
       AMBIENT_FILES.atmos3,
       AMBIENT_FILES.atmos4,
+      AMBIENT_FILES.atmos5,
+      AMBIENT_FILES.atmos6,
     ]),
     loadList(ctx, IMPACT_FILES),
     loadList(ctx, DOOR_OPEN_FILES),
