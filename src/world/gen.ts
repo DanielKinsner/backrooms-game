@@ -24,6 +24,9 @@ export type ZoneKind =
   | 'corridors'
   | 'rooms'
   | 'openDamp'
+  // TAPE 2 expansion (G1/G2) — Level 0 interior variants:
+  | 'office' // a 2002 office island: cubicles, dead CRTs, one that isn't
+  | 'flooded' // the damp won. ankle-deep throughout. the water hears you.
   // anomalous wings — the maze bleeds into other places (liminal canon):
   | 'pool' // the Poolrooms: tile, still water, the smell of nothing
   | 'playground' // Level Fun =) — a playplace with no children in it
@@ -61,7 +64,18 @@ export interface Pillar {
   size: number
 }
 
-export type FurnitureKind = 'desk' | 'boxes' | 'cabinet'
+export type FurnitureKind = 'desk' | 'boxes' | 'cabinet' | 'cubicle'
+
+/** Office CRT monitors. At most one per chunk is still powered. */
+export interface Crt {
+  x: number
+  z: number
+  rot: number // y radians
+  powered: boolean
+}
+
+/** Flooded zones: standing water across the whole chunk at this height. */
+export const FLOOD_Y = 0.11
 
 export interface Furniture {
   kind: FurnitureKind
@@ -105,6 +119,7 @@ export interface ChunkData {
   furniture: Furniture[]
   basins: Basin[]
   structures: PlayStructure[]
+  crts: Crt[]
 }
 
 function mix(a: number, b: number, c: number): number {
@@ -138,6 +153,13 @@ function pickZone(cx: number, cz: number): ZoneKind {
     if (r2 < 0.047) return 'playground'
     if (r2 < 0.068) return 'garage'
   }
+  // Level-0 interior variants (TAPE 2): same 2x2 coherence, slightly less
+  // shy of spawn — they're still Level 0, just Level 0 having a bad day.
+  if (Math.max(Math.abs(cx), Math.abs(cz)) >= 2) {
+    const r3 = mix(Math.floor(cx / 2), Math.floor(cz / 2), 5151)
+    if (r3 < 0.03) return 'office'
+    if (r3 < 0.075) return 'flooded'
+  }
   const r = mix(cx, cz, 977)
   if (r < 0.34) return 'corridors'
   if (r < 0.64) return 'pillarHall'
@@ -150,6 +172,8 @@ const FIXTURE_DENSITY: Record<ZoneKind, number> = {
   corridors: 0.24,
   rooms: 0.22,
   openDamp: 0.13,
+  office: 0.24, // offices are lit. that's the problem with them
+  flooded: 0.08, // half the bank drowned. the rest reflect in the water
   pool: 0.1, // dimmer. the water makes up for it by being wrong
   playground: 0.07, // dimmest. the colors shouldn't be in shadow, but they are
   garage: 0.13,
@@ -163,11 +187,63 @@ export function generateChunk(cx: number, cz: number, salt = 0): ChunkData {
   const vWalls: boolean[][] = Array.from({ length: CHUNK_CELLS }, () => new Array(CHUNK_CELLS).fill(false))
   const hWalls: boolean[][] = Array.from({ length: CHUNK_CELLS }, () => new Array(CHUNK_CELLS).fill(false))
   const pillars: Pillar[] = []
+  const furniture: Furniture[] = []
 
   for (let j = 0; j < CHUNK_CELLS; j++) vWalls[0][j] = boundaryWall(cx * CHUNK_CELLS, cz * CHUNK_CELLS + j, true)
   for (let i = 0; i < CHUNK_CELLS; i++) hWalls[i][0] = boundaryWall(cz * CHUNK_CELLS, cx * CHUNK_CELLS + i, false)
 
+  const crts: Crt[] = []
+
   switch (zone) {
+    case 'office': {
+      // sparse real walls; the cubicles are the architecture (G1: dense
+      // occlusion — ideal Reactive-Director terrain)
+      for (let li = 1; li < CHUNK_CELLS; li++)
+        for (let j = 0; j < CHUNK_CELLS; j++) vWalls[li][j] = rng.chance(0.14)
+      for (let i = 0; i < CHUNK_CELLS; i++)
+        for (let lj = 1; lj < CHUNK_CELLS; lj++) hWalls[i][lj] = rng.chance(0.14)
+      // a cubicle island: pods on a loose grid, one CRT each, all dead.
+      // except one. somewhere in the office, one of them is still on.
+      const poweredPod = rng.int(0, 5)
+      let pod = 0
+      for (let i = 1; i < CHUNK_CELLS - 1; i += 2) {
+        for (let j = 1; j < CHUNK_CELLS - 1; j += 2) {
+          if (!rng.chance(0.4)) continue
+          const px = (cx * CHUNK_CELLS + i + 0.5) * CELL + rng.range(-0.3, 0.3)
+          const pz = (cz * CHUNK_CELLS + j + 0.5) * CELL + rng.range(-0.3, 0.3)
+          // skip pods that would intersect interior walls — pods sit mid-cell,
+          // walls on edges; the 1.9 m pod fits a 2.4 m cell, so we're clear.
+          // (the U opens in a seeded direction)
+          const rot: 0 | 1 = rng.chance(0.5) ? 0 : 1
+          // cubicle pod marker; mesh expands it into partitions + desk
+          // (reuses the furniture channel to stay on the existing systems)
+          furniture.push({ kind: 'cubicle', x: px, z: pz, rot })
+          if (rng.chance(0.85)) {
+            crts.push({
+              x: px,
+              z: pz,
+              rot: rot === 0 ? 0 : Math.PI / 2,
+              powered: pod === poweredPod,
+            })
+          }
+          pod++
+        }
+      }
+      break
+    }
+
+    case 'flooded':
+      // open and drowned: a few pillars, their reflections, and the rest
+      for (let i = 0; i < CHUNK_CELLS; i++)
+        for (let j = 0; j < CHUNK_CELLS; j++)
+          if (rng.chance(0.05))
+            pillars.push({
+              x: (cx * CHUNK_CELLS + i + 0.5) * CELL,
+              z: (cz * CHUNK_CELLS + j + 0.5) * CELL,
+              size: 0.6,
+            })
+      break
+
     case 'corridors':
       for (let li = 1; li < CHUNK_CELLS; li++)
         for (let j = 0; j < CHUNK_CELLS; j++) vWalls[li][j] = rng.chance(0.55)
@@ -298,12 +374,13 @@ export function generateChunk(cx: number, cz: number, salt = 0): ChunkData {
 
   // Abandoned furniture: mantle targets and kenopsia anchors. Sparse —
   // a lone desk in an empty hall is worth ten cluttered ones.
-  const furniture: Furniture[] = []
   const FURN_CHANCE: Record<ZoneKind, number> = {
     rooms: 0.05,
     openDamp: 0.025,
     pillarHall: 0.018,
     corridors: 0,
+    office: 0, // the office recipe places its own
+    flooded: 0.015, // something heavy was abandoned mid-drag
     pool: 0,
     playground: 0,
     garage: 0,
@@ -328,7 +405,7 @@ export function generateChunk(cx: number, cz: number, salt = 0): ChunkData {
     }
   }
 
-  return { cx, cz, zone, vWalls, hWalls, pillars, fixtures, furniture, basins, structures }
+  return { cx, cz, zone, vWalls, hWalls, pillars, fixtures, furniture, basins, structures, crts }
 }
 
 /** Recursive BSP room splitting; every split wall gets 1–2 door gaps. */

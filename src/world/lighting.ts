@@ -94,6 +94,21 @@ export class FixturePool {
     this.dimUntil = -1
   }
 
+  // D1 — receding lights: individual fixtures die outright for a while.
+  // No off animation: by the time you turn around, the dark is complete.
+  private killed: { x: number; z: number; until: number }[] = []
+
+  killFixture(x: number, z: number, seconds: number): void {
+    this.killed.push({ x, z, until: this.time + seconds })
+  }
+
+  private isKilled(x: number, z: number): boolean {
+    for (const k of this.killed) {
+      if (k.until > this.time && Math.abs(k.x - x) < 0.5 && Math.abs(k.z - z) < 0.5) return true
+    }
+    return false
+  }
+
   private prevTime = -1
 
   update(world: ChunkManager, px: number, pz: number, time: number): void {
@@ -150,6 +165,9 @@ export class FixturePool {
     }
     near.sort((a, b) => a.d - b.d)
 
+    // purge expired kills occasionally
+    if (this.killed.length > 0 && this.killed[0].until < time - 5) this.killed.shift()
+
     const dimActive = this.dimUntil > time
     for (let i = 0; i < POOL_SIZE; i++) {
       const l = this.lights[i]
@@ -167,6 +185,7 @@ export class FixturePool {
       if (dimActive && Math.abs(f.x - this.dimX) < 0.5 && Math.abs(f.z - this.dimZ) < 0.5) {
         v *= 0.35
       }
+      if (this.killed.length > 0 && this.isKilled(f.x, f.z)) v = 0
       l.intensity = v
     }
   }

@@ -45,7 +45,9 @@ export interface AudioState {
   /** Player is standing in/near an openDamp zone — schedules drips. */
   dampNear: boolean
   /** Anomalous wing under the player's feet (null = plain Level 0). */
-  zone: 'pool' | 'playground' | 'garage' | null
+  zone: 'pool' | 'playground' | 'garage' | 'flooded' | 'office' | null
+  /** Feet in standing water — wading foley, and the water eats your noise. */
+  inWater: boolean
 }
 
 export type SpatialName = 'impact' | 'doorOpen' | 'doorClose' | 'creak' | 'glitch'
@@ -78,8 +80,29 @@ export class AudioEngine {
 
   // Reverb send: a synthesized impulse response of a carpet-deadened hall.
   // sfx + presence get a quiet send so one-shots stop sounding pasted-on.
+  // F2 (the reverb lie): a second, longer/brighter IR for hard-surfaced
+  // zones; the returns crossfade so the EAR learns the room changed first.
   private reverb: ConvolverNode | null = null
+  private reverbReturnA: GainNode | null = null
+  private reverbReturnB: GainNode | null = null
   private noiseBuf: AudioBuffer | null = null
+
+  // Spec C secondary: the floor under the silence. Runs only while the
+  // tape is paused DURING a silence event. Routed to presence — silence()
+  // never touches it, because it is not part of the world's sound.
+  private respGain: GainNode | null = null
+  private tapePaused = false
+
+  // Spec H: optional microphone. RMS with slow noise-floor calibration.
+  private micAnalyser: AnalyserNode | null = null
+  private micData: Float32Array<ArrayBuffer> | null = null
+  private micFloor = 0.01
+  private micCalibrationT = 0
+  /** 0..1 — how far above the calibrated floor the room is right now. */
+  micLevel = 0
+  /** Set true for one frame on a big spike (gasp/shout). Consumer clears. */
+  micSpike = false
+  private micSpikeArmed = true
 
   // Last listener pose — lets scheduled sounds (the silence intruder, drips)
   // place themselves relative to where the player IS, not where they were.
@@ -205,15 +228,50 @@ export class AudioEngine {
     // events IN the space). Carpet kills highs fast, so the IR is short/dark.
     this.reverb = ctx.createConvolver()
     this.reverb.buffer = makeImpulseResponse(ctx, 1.3, 3.2)
-    const reverbReturn = ctx.createGain()
-    reverbReturn.gain.value = 0.55
-    this.reverb.connect(reverbReturn).connect(this.master)
+    this.reverbReturnA = ctx.createGain()
+    this.reverbReturnA.gain.value = 0.55
+    this.reverb.connect(this.reverbReturnA).connect(this.master)
+    // F2: the second room. Longer, less damped — tile and concrete don't
+    // forgive sound the way carpet does. Crossfaded by zone in update().
+    const reverbB = ctx.createConvolver()
+    reverbB.buffer = makeImpulseResponse(ctx, 2.6, 1.7)
+    this.reverbReturnB = ctx.createGain()
+    this.reverbReturnB.gain.value = 0
+    reverbB.connect(this.reverbReturnB).connect(this.master)
     const sfxSend = ctx.createGain()
     sfxSend.gain.value = 0.14
-    this.sfxBus.connect(sfxSend).connect(this.reverb)
+    this.sfxBus.connect(sfxSend)
+    sfxSend.connect(this.reverb)
+    sfxSend.connect(reverbB)
     const presenceSend = ctx.createGain()
     presenceSend.gain.value = 0.22
-    this.presenceBus.connect(presenceSend).connect(this.reverb)
+    this.presenceBus.connect(presenceSend)
+    presenceSend.connect(this.reverb)
+    presenceSend.connect(reverbB)
+
+    // Spec C secondary — the respiration floor. A slow tidal swell of dark
+    // noise, far below the noise gate. The silence has a floor. Pausing the
+    // tape pauses the world's sounds, but not this.
+    const respSrc = ctx.createBufferSource()
+    respSrc.buffer = makeNoiseBuffer(ctx, 2)
+    respSrc.loop = true
+    respSrc.playbackRate.value = 0.5
+    const respBp = ctx.createBiquadFilter()
+    respBp.type = 'bandpass'
+    respBp.frequency.value = 240
+    respBp.Q.value = 0.7
+    const respLfo = ctx.createOscillator()
+    respLfo.frequency.value = 0.16 // ~10 breaths/min. large lungs. asleep.
+    const respDepth = ctx.createGain()
+    respDepth.gain.value = 0.5
+    const respVca = ctx.createGain()
+    respVca.gain.value = 0.5
+    respLfo.connect(respDepth).connect(respVca.gain)
+    this.respGain = ctx.createGain()
+    this.respGain.gain.value = 0
+    respSrc.connect(respBp).connect(respVca).connect(this.respGain).connect(this.presenceBus)
+    respSrc.start()
+    respLfo.start()
 
     // --- Listener defaults ---
     // Default position 0,0,0 forward -z, up +y (three.js camera convention).
@@ -291,7 +349,9 @@ export class AudioEngine {
     // Reuse the noise buffer for breath (same low-passed pink-ish character).
     this.foley = new Foley(ctx, this.sfxBus, this.samples.footstepsCloth, noiseBuf)
     this.foley.onStep = (sprinting: boolean): void => {
-      if (sprinting) this.lastNoiseAt = ctx.currentTime
+      // Wading kills your loudness debt — the water hears you so the
+      // building can't. The stalking presence loses you here (Spec G2).
+      if (sprinting && this.foley?.surface !== 'water') this.lastNoiseAt = ctx.currentTime
       this.stepCallback?.(sprinting)
     }
   }
@@ -346,10 +406,11 @@ export class AudioEngine {
     // Sparse — never two from the same place. (Where is the water coming
     // from? Don't ask.)
     const inPool = state.zone === 'pool'
-    if ((state.dampNear || inPool) && !this.silenced) {
+    const inFlood = state.zone === 'flooded'
+    if ((state.dampNear || inPool || inFlood) && !this.silenced) {
       this.dripTimer -= dt
       if (this.dripTimer <= 0) {
-        this.dripTimer = inPool ? 3 + Math.random() * 6 : 5 + Math.random() * 8
+        this.dripTimer = inPool || inFlood ? 3 + Math.random() * 6 : 5 + Math.random() * 8
         const a = Math.random() * Math.PI * 2
         const d = 3 + Math.random() * 7
         this.playDrip(state.px + Math.cos(a) * d, state.pz + Math.sin(a) * d)
@@ -358,12 +419,36 @@ export class AudioEngine {
 
     // Zone character: footstep surface, the lapping bed, the schedulers.
     if (this.foley) {
-      this.foley.surface =
-        state.zone === 'pool' ? 'tile' : state.zone === 'garage' ? 'concrete' : 'carpet'
+      this.foley.surface = state.inWater
+        ? 'water'
+        : state.zone === 'pool'
+          ? 'tile'
+          : state.zone === 'garage'
+            ? 'concrete'
+            : 'carpet'
     }
+
+    // F2 — the reverb lie: hard-surfaced zones get the longer, brighter
+    // room. The crossfade starts the moment the zone changes under your
+    // feet — the ear learns the ceiling moved before the eye does.
+    if (this.reverbReturnA && this.reverbReturnB) {
+      const hard = state.zone === 'pool' || state.zone === 'garage' || state.zone === 'flooded'
+      const t = this.ctx.currentTime
+      this.reverbReturnA.gain.setTargetAtTime(hard ? 0.12 : 0.55, t, 0.8)
+      this.reverbReturnB.gain.setTargetAtTime(hard ? 0.6 : 0, t, 0.8)
+    }
+
+    // Spec C secondary: the respiration floor surfaces only while the tape
+    // is paused inside a SILENCE event (or when a script forces it).
+    if (this.respGain) {
+      const audible = this.respForced || (this.tapePaused && this.silenced)
+      this.respGain.gain.setTargetAtTime(audible ? 0.045 : 0, this.ctx.currentTime, audible ? 1.2 : 0.15)
+    }
+
+    this.updateMic(dt)
     if (this.lapGain) {
       const t = this.ctx.currentTime
-      const target = inPool && !this.silenced ? 0.16 : 0
+      const target = !this.silenced ? (inPool ? 0.16 : inFlood ? 0.09 : 0) : 0
       this.lapGain.gain.setTargetAtTime(target, t, 1.4)
       for (const d of this.lapLfoDepths) d.gain.setTargetAtTime(target > 0 ? 0.35 : 0, t, 1.4)
     }
@@ -463,6 +548,21 @@ export class AudioEngine {
   /** Looming telegraph on the sub pad (see DreadBed.loom). */
   loom(rampS?: number, holdS?: number, recedeS?: number): void {
     this.bed?.loom(rampS, holdS, recedeS)
+  }
+
+  /** D12 — entrainment break: heartbeat locks to the player's gait. */
+  lockHeartbeat(stepIntervalS: number, seconds = 30): void {
+    this.bed?.lockToCadence(stepIntervalS, seconds)
+  }
+
+  /** Spec H — every fixture hum dips 3 dB for 2 s. The level heard you. */
+  dipHums(seconds = 2): void {
+    this.hum?.dipAll(seconds)
+  }
+
+  /** D1 — a clicked-off fixture stops humming too. */
+  killFixtureHum(x: number, z: number, seconds: number): void {
+    this.hum?.killFixture(x, z, seconds)
   }
 
   /** Foley step callback (director's mimic system listens for the cadence). */
@@ -732,6 +832,349 @@ export class AudioEngine {
         master.disconnect()
       }, 6000)
     }, seconds * 1000)
+  }
+
+  private respForced = false
+
+  /** Script hook (Tape 2 Manila variant): force the respiration floor. */
+  forceRespiration(on: boolean): void {
+    this.respForced = on
+  }
+
+  /** Narrative tells us when the tape is "paused" (held Q). */
+  setTapePaused(v: boolean): void {
+    this.tapePaused = v
+  }
+
+  get isSilenced(): boolean {
+    return this.silenced
+  }
+
+  /**
+   * F1 — slow-notch silence. The hum bed loses ~0.5 dB every 4 s for 90 s,
+   * then gates fully. The player must not be able to say when the sound
+   * left — only that it is gone. Restore happens in ONE frame.
+   */
+  slowSilence(fadeSeconds = 90, holdSeconds = 14): void {
+    if (!this.ctx || this.silenced) return
+    this.silenced = true
+    const ctx = this.ctx
+    const t = ctx.currentTime
+    // stepped attenuation reads as nothing happening, 22 times in a row
+    const steps = Math.floor(fadeSeconds / 4)
+    this.ambienceBus.gain.cancelScheduledValues(t)
+    this.ambienceBus.gain.setValueAtTime(this.ambienceBus.gain.value, t)
+    for (let i = 1; i <= steps; i++) {
+      this.ambienceBus.gain.setValueAtTime(0.85 * Math.pow(10, (-0.5 * i) / 20), t + i * 4)
+    }
+    this.ambienceBus.gain.setValueAtTime(0.0001, t + fadeSeconds)
+    window.setTimeout(() => {
+      if (!this.ctx) return
+      // ONE frame: the hum is simply back, as if it never left
+      this.ambienceBus.gain.cancelScheduledValues(this.ctx.currentTime)
+      this.ambienceBus.gain.setValueAtTime(0.85, this.ctx.currentTime)
+      this.silenced = false
+    }, (fadeSeconds + holdSeconds) * 1000)
+  }
+
+  /**
+   * F3 — formant hum. Two vowel-shaped bandpasses sweep across the
+   * ambience bus at −18 dB for 8–12 s. Sub-threshold EVP: never
+   * intelligible, never repeated identically.
+   */
+  formantSweep(): void {
+    if (!this.ctx || this.silenced) return
+    const ctx = this.ctx
+    const t = ctx.currentTime
+    const dur = 8 + Math.random() * 4
+    const out = ctx.createGain()
+    out.gain.setValueAtTime(0, t)
+    out.gain.linearRampToValueAtTime(0.12, t + dur * 0.3) // ≈ −18 dB rel
+    out.gain.linearRampToValueAtTime(0, t + dur)
+    out.connect(this.master)
+    const mk = (f0: number, f1: number): BiquadFilterNode => {
+      const bp = ctx.createBiquadFilter()
+      bp.type = 'bandpass'
+      bp.Q.value = 7
+      bp.frequency.setValueAtTime(f0 * (0.92 + Math.random() * 0.16), t)
+      bp.frequency.exponentialRampToValueAtTime(f1 * (0.92 + Math.random() * 0.16), t + dur)
+      this.ambienceBus.connect(bp)
+      bp.connect(out)
+      return bp
+    }
+    const a = mk(700, 300)
+    const b = mk(1200, 2300)
+    window.setTimeout(() => {
+      try {
+        a.disconnect()
+        b.disconnect()
+        out.disconnect()
+      } catch {
+        /* gone */
+      }
+    }, (dur + 0.5) * 1000)
+  }
+
+  /** D2 — Echo +1: the player's own step again, slightly late, behind. */
+  playEchoStep(x: number, z: number, gain = 0.3): void {
+    if (!this.ctx || !this.samples) return
+    const list = this.samples.footstepsCloth
+    if (list.length === 0) return
+    const ctx = this.ctx
+    const buf = list[Math.floor(Math.random() * list.length)]
+    const src = ctx.createBufferSource()
+    src.buffer = buf
+    src.playbackRate.value = 0.85 * (1 + (Math.random() * 2 - 1) * 0.05)
+    const lp = ctx.createBiquadFilter()
+    lp.type = 'lowpass'
+    lp.frequency.value = 1100 // your own shoes, heard from the wrong room
+    const panner = this.makePanner(x, 0.1, z, 30)
+    const vca = ctx.createGain()
+    vca.gain.value = gain
+    src.connect(lp).connect(vca).connect(panner).connect(this.presenceBus)
+    const t = ctx.currentTime
+    src.start(t)
+    this.cleanup(src, [lp, vca, panner], t + buf.duration + 0.1)
+  }
+
+  /**
+   * D5 — a 2002 office phone, ringing. 440+480 Hz, 2 s on / 4 s off —
+   * the exact Bell cadence. Returns a handle to stop it (forever).
+   */
+  startPhoneRing(x: number, y: number, z: number): { stop: () => void } | null {
+    if (!this.ctx) return null
+    const ctx = this.ctx
+    const vca = ctx.createGain()
+    vca.gain.value = 0
+    const panner = this.makePanner(x, y, z, 45)
+    const oscs: OscillatorNode[] = []
+    for (const f of [440, 480]) {
+      const o = ctx.createOscillator()
+      o.type = 'sine'
+      o.frequency.value = f
+      // bell warble: 20 Hz tremolo makes sines read as a ringer
+      o.connect(vca)
+      o.start()
+      oscs.push(o)
+    }
+    const trem = ctx.createOscillator()
+    trem.frequency.value = 20
+    const tremDepth = ctx.createGain()
+    tremDepth.gain.value = 0.5
+    trem.connect(tremDepth).connect(vca.gain)
+    trem.start()
+    const out = ctx.createGain()
+    out.gain.value = 0.16
+    vca.connect(out).connect(panner).connect(this.sfxBus)
+    let alive = true
+    const cycle = (): void => {
+      if (!alive || !this.ctx) return
+      const t = this.ctx.currentTime
+      vca.gain.cancelScheduledValues(t)
+      vca.gain.setValueAtTime(0.5, t)
+      vca.gain.setValueAtTime(0, t + 2)
+      window.setTimeout(cycle, 6000)
+    }
+    cycle()
+    return {
+      stop: (): void => {
+        if (!alive || !this.ctx) return
+        alive = false
+        const t = this.ctx.currentTime
+        vca.gain.cancelScheduledValues(t)
+        vca.gain.setTargetAtTime(0, t, 0.04)
+        window.setTimeout(() => {
+          try {
+            for (const o of oscs) o.stop()
+            trem.stop()
+            vca.disconnect()
+            out.disconnect()
+            panner.disconnect()
+          } catch {
+            /* gone */
+          }
+        }, 400)
+      },
+    }
+  }
+
+  /**
+   * D5 answer: line static, then the room's own fluorescent hum played
+   * back down the line, one second late. Then the click. It never rings
+   * again, and you will think about the delay for the rest of the run.
+   */
+  playPhoneAnswer(x: number, y: number, z: number): void {
+    if (!this.ctx || !this.noiseBuf) return
+    const ctx = this.ctx
+    const t = ctx.currentTime
+    // telephone band: 300–3400 Hz
+    const tel = ctx.createBiquadFilter()
+    tel.type = 'bandpass'
+    tel.frequency.value = 1100
+    tel.Q.value = 0.35
+    const out = ctx.createGain()
+    out.gain.value = 0.14
+    const panner = this.makePanner(x, y, z, 12)
+    tel.connect(out).connect(panner).connect(this.sfxBus)
+    // 1.4 s of line static
+    const stat = ctx.createBufferSource()
+    stat.buffer = this.noiseBuf
+    stat.loop = true
+    const statG = ctx.createGain()
+    statG.gain.setValueAtTime(0.4, t)
+    statG.gain.setValueAtTime(0.07, t + 1.4)
+    stat.connect(statG).connect(tel)
+    stat.start(t)
+    stat.stop(t + 5.6)
+    // ...then the hum. THIS room's hum. One second of delay on the line.
+    for (let i = 0; i < 3; i++) {
+      const o = ctx.createOscillator()
+      o.type = 'sine'
+      o.frequency.value = [120, 240, 360][i]
+      const g = ctx.createGain()
+      g.gain.setValueAtTime(0, t)
+      g.gain.setValueAtTime([0.5, 0.25, 0.1][i], t + 2.4) // dial-delay: 1 s after static settles
+      g.gain.setValueAtTime(0, t + 5.2)
+      o.connect(g).connect(tel)
+      o.start(t)
+      o.stop(t + 5.3)
+      this.cleanup(o, [g], t + 5.4)
+    }
+    // the far end hangs up first
+    window.setTimeout(() => this.playTick(x, y, z, 1.6), 5300)
+    this.cleanup(stat, [statG, tel, out, panner], t + 6)
+  }
+
+  /**
+   * Tape 2 payoff — D.'s camcorder, ingested by your own tape. ~6 s,
+   * non-spatial (it plays through the HUD, not the room): damp-carpet
+   * steps, his breathing, the hum cutting to one second of the Manila
+   * Room's softened purr, then the battery death click. Never more.
+   */
+  playDeadCamcorder(onDone?: () => void): void {
+    if (!this.ctx || !this.samples || !this.noiseBuf) return
+    const ctx = this.ctx
+    const t0 = ctx.currentTime
+    const out = ctx.createGain()
+    out.gain.value = 0.5
+    // through-the-tape band
+    const band = ctx.createBiquadFilter()
+    band.type = 'bandpass'
+    band.frequency.value = 900
+    band.Q.value = 0.3
+    band.connect(out).connect(this.uiBus)
+    // his steps — cloth, damp, unhurried; six of them
+    const steps = this.samples.footstepsCloth
+    for (let i = 0; i < 6; i++) {
+      const at = t0 + 0.4 + i * 0.62
+      if (steps.length > 0) {
+        const src = ctx.createBufferSource()
+        src.buffer = steps[i % steps.length]
+        src.playbackRate.value = 0.8
+        const g = ctx.createGain()
+        g.gain.value = 0.5
+        src.connect(g).connect(band)
+        src.start(at)
+        this.cleanup(src, [g], at + 1)
+      }
+    }
+    // his breathing
+    const br = ctx.createBufferSource()
+    br.buffer = this.noiseBuf
+    br.loop = true
+    br.playbackRate.value = 0.55
+    const brBp = ctx.createBiquadFilter()
+    brBp.type = 'bandpass'
+    brBp.frequency.value = 500
+    brBp.Q.value = 0.9
+    const brG = ctx.createGain()
+    brG.gain.setValueAtTime(0, t0)
+    for (let i = 0; i < 4; i++) {
+      brG.gain.linearRampToValueAtTime(0.16, t0 + 0.6 + i * 1.1)
+      brG.gain.linearRampToValueAtTime(0.03, t0 + 1.15 + i * 1.1)
+    }
+    br.connect(brBp).connect(brG).connect(band)
+    br.start(t0)
+    br.stop(t0 + 4.6)
+    this.cleanup(br, [brBp, brG], t0 + 4.7)
+    // the hum — then ONE second of the Manila purr (muffled, kind), then
+    const humO = ctx.createOscillator()
+    humO.type = 'sine'
+    humO.frequency.value = 120
+    const humG = ctx.createGain()
+    humG.gain.setValueAtTime(0.3, t0)
+    humG.gain.setValueAtTime(0.3, t0 + 4.4)
+    humG.gain.linearRampToValueAtTime(0.12, t0 + 4.55) // the purr: softer, lower
+    const humLp = ctx.createBiquadFilter()
+    humLp.type = 'lowpass'
+    humLp.frequency.setValueAtTime(1200, t0)
+    humLp.frequency.setValueAtTime(320, t0 + 4.45)
+    humO.connect(humG).connect(humLp).connect(band)
+    humO.start(t0)
+    humO.stop(t0 + 5.6)
+    this.cleanup(humO, [humG, humLp], t0 + 5.7)
+    // battery death: one click, then nothing at all
+    window.setTimeout(() => {
+      if (!this.ctx) return
+      this.playUi('glitch', 0.18)
+      onDone?.()
+    }, 5800)
+    window.setTimeout(() => {
+      try {
+        band.disconnect()
+        out.disconnect()
+      } catch {
+        /* gone */
+      }
+    }, 6500)
+  }
+
+  /**
+   * Spec H — microphone opt-in. getUserMedia → AnalyserNode → RMS with a
+   * slow noise-floor calibration. NO audio is recorded, transmitted, or
+   * stored — the graph ends at the analyser; nothing connects onward.
+   */
+  async enableMic(): Promise<boolean> {
+    if (!this.ctx) return false
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: { echoCancellation: true, noiseSuppression: false },
+      })
+      const src = this.ctx.createMediaStreamSource(stream)
+      this.micAnalyser = this.ctx.createAnalyser()
+      this.micAnalyser.fftSize = 1024
+      src.connect(this.micAnalyser) // terminal node — analysis only
+      this.micData = new Float32Array(this.micAnalyser.fftSize)
+      this.micCalibrationT = 0
+      return true
+    } catch {
+      return false // denied or unavailable: silent degrade
+    }
+  }
+
+  private updateMic(dt: number): void {
+    if (!this.micAnalyser || !this.micData) return
+    this.micAnalyser.getFloatTimeDomainData(this.micData)
+    let sum = 0
+    for (let i = 0; i < this.micData.length; i++) sum += this.micData[i] * this.micData[i]
+    const rms = Math.sqrt(sum / this.micData.length)
+    // first 30 s: learn the room. after: floor only creeps DOWN-slowly/UP-never-fast
+    this.micCalibrationT += dt
+    if (this.micCalibrationT < 30) {
+      this.micFloor += (rms - this.micFloor) * Math.min(1, dt * 0.5)
+    } else {
+      this.micFloor += (Math.min(rms, this.micFloor) - this.micFloor) * Math.min(1, dt * 0.02)
+    }
+    const over = Math.max(0, rms - Math.max(this.micFloor * 1.8, 0.004))
+    this.micLevel = Math.min(1, over / 0.1)
+    if (this.micCalibrationT > 30 && rms > Math.max(this.micFloor * 8, 0.09)) {
+      if (this.micSpikeArmed) {
+        this.micSpike = true
+        this.micSpikeArmed = false
+      }
+    } else if (rms < this.micFloor * 3) {
+      this.micSpikeArmed = true
+    }
   }
 
   /** Almond water going down. Two soft gulps, then quiet. */

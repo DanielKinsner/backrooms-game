@@ -7,8 +7,9 @@ import { Loop } from './core/loop'
 import { DebugHud } from './core/debug'
 import { PlayerController } from './player/controller'
 import { ChunkManager } from './world/manager'
-import { CELL, zoneOf } from './world/gen'
-import { initWorldMaterials } from './world/materials'
+import { CELL, FLOOD_Y, WATER_Y, zoneOf } from './world/gen'
+import { initWorldMaterials, updateCrtStatic, carpetFlowUniforms } from './world/materials'
+import { hasTape2, isTape2Run, selectTape } from './story/tape2'
 import { FixturePool } from './world/lighting'
 import { createPostStack } from './fx/post'
 import { DustMotes } from './fx/dust'
@@ -47,6 +48,8 @@ async function boot(): Promise<void> {
   const input = new Input(canvas)
   const player = new PlayerController(camera)
   const world = new ChunkManager(scene)
+  // Tape 2 must be decided before the first chunk exists (Spec E)
+  world.tape2Variance = isTape2Run() && hasTape2()
   const lights = new FixturePool(scene, hemi)
   const SPAWN_X = CELL * 4.5 // middle of the spawn pillar hall
   player.setSpawn(SPAWN_X, 0.5, SPAWN_X)
@@ -60,6 +63,8 @@ async function boot(): Promise<void> {
 
   const audio = new AudioEngine()
   const director = new Director({ world, lights, audio, player, scene })
+  director.hud = hud // stamp cards (the breach, REC stop, reverse)
+  director.vhs = post.vhs
   const dust = new DustMotes(scene)
 
   // the mimic learns the player's gait from the foley layer
@@ -85,9 +90,51 @@ async function boot(): Promise<void> {
     post.vhs.bumpGeneration(0.05)
   }
 
+  // ---- the shelf (Spec E): a second tape appears after first completion
+  const tape2Btn = document.querySelector<HTMLButtonElement>('#tape2-btn')
+  const tapeShelf = document.querySelector<HTMLDivElement>('#tape-shelf')
+  if (tapeShelf && hasTape2()) {
+    tapeShelf.classList.remove('hidden')
+    const t2 = isTape2Run()
+    document.querySelector('#tape1-btn')?.classList.toggle('selected', !t2)
+    tape2Btn?.classList.toggle('selected', t2)
+  }
+  document.querySelector('#tape1-btn')?.addEventListener('click', (e) => {
+    e.stopPropagation()
+    if (isTape2Run()) {
+      selectTape(1)
+      window.location.reload()
+    }
+  })
+  tape2Btn?.addEventListener('click', (e) => {
+    e.stopPropagation()
+    if (!isTape2Run()) {
+      selectTape(2)
+      window.location.reload()
+    }
+  })
+
+  // ---- mic opt-in (Spec H): off by default, analysis only, ships quiet
+  const micToggle = document.querySelector<HTMLInputElement>('#mic-optin')
+  if (micToggle) {
+    micToggle.checked = window.localStorage.getItem('noclip.mic') === '1'
+    micToggle.addEventListener('click', (e) => e.stopPropagation())
+    micToggle.addEventListener('change', () => {
+      try {
+        window.localStorage.setItem('noclip.mic', micToggle.checked ? '1' : '0')
+      } catch {
+        /* fine */
+      }
+    })
+  }
+  document.querySelector('.mic-row')?.addEventListener('click', (e) => e.stopPropagation())
+
   overlay.addEventListener('click', () => {
     input.requestLock()
-    void audio.init() // must live in the gesture handler (autoplay policy); idempotent
+    void audio.init().then(() => {
+      // permission flow lives in the same gesture chain; denial = silence
+      if (micToggle?.checked) void audio.enableMic()
+    })
   })
   input.onLockChange = (locked) => {
     overlay.classList.toggle('hidden', locked)
@@ -158,9 +205,22 @@ async function boot(): Promise<void> {
       const horizSpeed = Math.hypot(player.velocity.x, player.velocity.z)
       const zoneHere = world.zoneAt(player.position.x, player.position.z)
       const wingHere =
-        zoneHere === 'pool' || zoneHere === 'playground' || zoneHere === 'garage'
+        zoneHere === 'pool' ||
+        zoneHere === 'playground' ||
+        zoneHere === 'garage' ||
+        zoneHere === 'flooded' ||
+        zoneHere === 'office'
           ? zoneHere
           : null
+      // standing water: ankle-deep in the flooded wing, knee-deep in a basin
+      const inWater =
+        zoneHere === 'flooded' ||
+        (zoneHere === 'pool' && player.position.y < WATER_Y + 0.05)
+      player.waterDepth = inWater
+        ? zoneHere === 'flooded'
+          ? FLOOD_Y
+          : Math.min(0.45, WATER_Y - player.position.y + 0.26)
+        : 0
       audio.update(dt, {
         px: camera.position.x,
         py: camera.position.y,
@@ -179,7 +239,24 @@ async function boot(): Promise<void> {
         moving: horizSpeed > 0.05,
         dampNear: zoneHere === 'openDamp',
         zone: wingHere,
+        inWater,
       })
+
+      // Office Pocket (G1): the powered CRT interferes with YOUR tape when
+      // you stand with it. Two recordings, one bandwidth.
+      let crtNear = 0
+      if (zoneHere === 'office' || wingHere === 'office') {
+        updateCrtStatic(time * 1000)
+        for (const chunk of world.all()) {
+          if (chunk.zone !== 'office') continue
+          for (const crt of chunk.crts) {
+            if (!crt.powered) continue
+            const d = Math.hypot(crt.x - player.position.x, crt.z - player.position.z)
+            crtNear = Math.max(crtNear, 1 - Math.min(d / 2.2, 1))
+          }
+        }
+        if (crtNear > 0.55 && Math.random() < dt * 1.2) post.vhs.trackingSurge(0.3)
+      }
 
       // dread leans on the frame: fog thickens, the lens tightens, the
       // vignette deepens — all at sub-perceptual rates (30s+ time constants)
@@ -193,15 +270,24 @@ async function boot(): Promise<void> {
             ? 0x4c4636
             : wingHere === 'garage'
               ? 0x6b675c
-              : FOG_COLOR
+              : wingHere === 'flooded'
+                ? 0x66614b // the damp air of a place that lost an argument with water
+                : wingHere === 'office'
+                  ? 0x80775a // cooler. more honest. somehow worse.
+                  : FOG_COLOR
       _fogTarget.setHex(fogTarget)
       lights.fogBase.lerp(_fogTarget, 1 - Math.exp(-0.5 * dt))
       player.dreadNarrow += (director.dread - player.dreadNarrow) * (1 - Math.exp(-0.033 * dt))
       post.vignette.darkness = 0.52 + director.dread * 0.1
 
       // the tape reacts to the presence before the player can name why
-      post.vhs.interference = Math.min(1, director.dread * 0.15 + director.presenceNearness * 0.6)
+      post.vhs.interference = Math.min(
+        1,
+        director.dread * 0.15 + director.presenceNearness * 0.6 + crtNear * 0.7,
+      )
       hud.setTracking(post.vhs.surging)
+      // D10 needs the framebuffer size to know where "center-frame" is
+      carpetFlowUniforms.uFlowRes.value.set(canvas.width, canvas.height)
     }
     post.vhs.intensity = 1 + player.zoom * 0.55 // zoomed tape strains
     world.update(player.position.x, player.position.z)
@@ -211,7 +297,9 @@ async function boot(): Promise<void> {
     // "pausing the tape" freezes the frame; the world keeps making sound.
     // narrative.freezeT is the impossible-artifact variant: the frame holds
     // while every sound continues — the picture blinked, the world didn't.
-    if (!narrative.tapePaused && narrative.freezeT <= 0) {
+    // Spec C: the prepared still RENDERS while paused — pause noise, judder
+    // and all. What's in that frame was never in the live one.
+    if ((!narrative.tapePaused || narrative.pauseStillActive) && narrative.freezeT <= 0) {
       renderer.info.reset()
       post.composer.render(dt)
     }

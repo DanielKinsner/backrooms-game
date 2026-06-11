@@ -3,7 +3,10 @@ import type { ChunkManager } from '../world/manager'
 import type { FixturePool } from '../world/lighting'
 import type { AudioEngine } from '../audio/engine'
 import type { PlayerController } from '../player/controller'
-import { getPareidoliaMaterial } from '../world/materials'
+import type { CamcorderHud } from '../ui/hud'
+import type { VHSEffect } from '../fx/vhs'
+import { getPareidoliaMaterial, carpetFlowUniforms, seamDriftUniforms } from '../world/materials'
+import { PlayerProfile } from './profile'
 import { Rng } from '../core/rng'
 
 /**
@@ -33,6 +36,33 @@ type EventClass =
   | 'humSwallow'
   | 'peripheralDim'
   | 'pareidolia'
+  // ---- TAPE 2 deck (EXPANSION.md D, F, A). bigger deck, same draw rate ----
+  | 'recedingLights' // D1: fixtures click off behind you, one by one
+  | 'echoPlus' // D2: your footsteps, +1, slightly late, for 60 s
+  | 'playback' // D3: your OWN steps from ten minutes ago, one chunk over
+  | 'wetPrints' // D4: damp footprints ahead, going your way. they stop.
+  | 'phoneRing' // D5: a 2002 office phone. it knows how fast you came.
+  | 'seamDrift' // D7: the wallpaper stops agreeing with itself
+  | 'recStop' // D8: the REC dot goes solid. that's all. that's the card.
+  | 'reverseStamp' // D9: during silence, the timestamp runs backwards
+  | 'carpetFlow' // D10: the carpet moves only where you aren't looking
+  | 'entrain' // D12: the heartbeat learns your gait, then keeps it
+  | 'formant' // F3: the hum almost says something
+  | 'closeExhale' // F4: once. right-rear. 0.3 m. nothing follows.
+  | 'slowSilence' // F1: you will not be able to say when the sound left
+  | 'breach' // A: the timestamp tells the truth for 2 frames
+  | 'arrowsAgree' // lore egg 2: every arrow points the way you're going
+
+/** Cards that need narrative-side props; return false to retry later. */
+export interface DirectorHooks {
+  phoneRing?: () => boolean
+  doorwayNote?: () => boolean
+  wetPrints?: () => boolean
+  arrowsAgree?: () => boolean
+  forwardSilhouette?: () => boolean
+  autofocus?: () => boolean
+  loudDebtNote?: () => void
+}
 
 interface DirectorOptions {
   world: ChunkManager
@@ -102,6 +132,28 @@ export class Director {
   private decalT = 0
   private decalState: 'in' | 'hold' | 'out' = 'in'
 
+  // ---- TAPE 2: the profiler and its exploits (Spec B) ----
+  readonly profile = new PlayerProfile()
+  hooks: DirectorHooks = {}
+  /** Wired by main: the HUD + tape for stamp cards (A, D8, D9). */
+  hud: CamcorderHud | null = null
+  vhs: VHSEffect | null = null
+  private exploitsFired = 0
+  private exploitUsed = new Set<string>()
+  /** High sprintRatio exploit: the presence runs a tighter leash. */
+  private loudDebt = false
+  private micExtended = 0
+
+  // ---- TAPE 2: deck state ----
+  private onceFired = new Set<EventClass>()
+  private echoPlusT = -1
+  private flowT = -1
+  private seamT = -1
+  private breachArmT = -1
+  private stepLog: { at: number; x: number; z: number }[] = []
+  private playbackQueue: MimicStep[] = []
+  private phonePlaced = false
+
   constructor(private readonly opts: DirectorOptions) {}
 
   update(dt: number): void {
@@ -113,6 +165,8 @@ export class Director {
     this.dread = Math.min(1, this.dread + dt * 0.0006)
     this.opts.audio?.setDread(this.dread)
 
+    this.profile.update(dt, this.opts.player, this.opts.world)
+
     if (this.suppressed) {
       // hold all machinery; the cadence clock waits with the player
       this.nextEventAt = Math.max(this.nextEventAt, this.time + 20)
@@ -123,6 +177,21 @@ export class Director {
     this.stepTransients(dt)
     this.stepMimic(dt)
     this.stepDecal(dt)
+    this.stepDeckTransients(dt)
+
+    // Spec H — the other side of the tape. Hard rule: the mic only ever
+    // MODULATES existing systems. It can never trigger an entity beat.
+    const audio = this.opts.audio
+    if (audio) {
+      if (audio.micSpike) {
+        audio.micSpike = false
+        if (this.dread > 0.5) audio.dipHums(2) // the level heard it too
+      }
+      if (this.presenceActive && audio.micLevel > 0.25 && this.micExtended < 10) {
+        this.presenceTimer += dt * 2 // it holds interest a little longer
+        this.micExtended += dt * 2
+      }
+    }
 
     if (this.time >= this.nextEventAt) {
       this.fireEvent()
@@ -141,28 +210,41 @@ export class Director {
   private stepPresence(dt: number): void {
     const p = this.opts.player.position
     this.presenceTimer -= dt
+    // Spec G2 silence debt: standing water kills your footstep audio.
+    // The presence cannot hear what the water already swallowed.
+    const inWater =
+      this.opts.world.zoneAt(p.x, p.z) === 'flooded' ||
+      (this.opts.world.zoneAt(p.x, p.z) === 'pool' && p.y < -0.05)
     if (!this.presenceActive) {
       // Retroactive hearing: it only ever comes because you were loud.
-      const heardYou = (this.opts.audio?.secondsSinceNoise() ?? Infinity) < 8
-      if (this.dread > 0.22 && this.presenceTimer <= 0 && heardYou) {
+      // Spec B loudDebt: a sprinter has accumulated more debt — it starts
+      // earlier, stays interested longer, tracks a tighter orbit.
+      const heardYou = (this.opts.audio?.secondsSinceNoise() ?? Infinity) < (this.loudDebt ? 14 : 8)
+      const threshold = this.loudDebt ? 0.16 : 0.22
+      if (this.dread > threshold && this.presenceTimer <= 0 && heardYou && !inWater) {
         this.presenceActive = true
         // materialize the idea of it somewhere off-screen, 25-40m out
         const a = this.rng.range(0, Math.PI * 2)
         const d = this.rng.range(25, 40)
         this.presence.set(p.x + Math.cos(a) * d, 0, p.z + Math.sin(a) * d)
-        this.presenceTimer = this.rng.range(40, 90) // how long it stays interested
+        this.presenceTimer = this.rng.range(40, 90) * (this.loudDebt ? 1.4 : 1)
       }
       return
     }
 
+    // in water it loses the thread fast — interest drains at triple rate
+    if (inWater) this.presenceTimer -= dt * 2
+
     // drift toward the player's GENERAL area (never the exact spot), slowly
+    const orbit = this.loudDebt ? 6 : 9
     const target = _v
-      .set(p.x + Math.sin(this.time * 0.13) * 9, 0, p.z + Math.cos(this.time * 0.11) * 9)
+      .set(p.x + Math.sin(this.time * 0.13) * orbit, 0, p.z + Math.cos(this.time * 0.11) * orbit)
     const dir = target.sub(this.presence)
     const dist = dir.length()
     if (dist > 1) {
       dir.normalize()
-      this.presence.addScaledVector(dir, Math.min(0.9 * dt * (0.5 + this.dread), dist))
+      const speed = 0.9 * dt * (0.5 + this.dread) * (this.loudDebt ? 1.25 : 1)
+      this.presence.addScaledVector(dir, Math.min(speed, dist))
     }
 
     // hum bends near it; the 19 Hz flutter rises with it;
@@ -258,6 +340,22 @@ export class Director {
     this.lastPlayerStepAt = now
     void sprinting
 
+    // D3 ring buffer: the tape remembers where you walked (≈12 min cap)
+    const p0 = this.opts.player.position
+    this.stepLog.push({ at: now, x: p0.x, z: p0.z })
+    if (this.stepLog.length > 1600) this.stepLog.splice(0, 200)
+
+    // D2 echo+1: one extra step, slightly late, behind. Stops with you.
+    if (this.echoPlusT > 0) {
+      const yaw = this.opts.player.yaw
+      this.playbackQueue.push({
+        at: now + 0.21 + this.rng.range(0, 0.08),
+        x: p0.x + Math.sin(yaw) * 5.5,
+        z: p0.z + Math.cos(yaw) * 5.5,
+        gain: 0.32,
+      })
+    }
+
     if (this.mimicState === 'mirror') {
       // answer each step, slightly late, slightly behind — same gait, wrong shoes
       const delay = 0.13 + this.rng.range(0, 0.1)
@@ -348,30 +446,39 @@ export class Director {
 
   // ---- pareidolia ------------------------------------------------------
 
-  /** A stain that almost has a face, in the wallpaper, off-center only. */
-  private tryPareidolia(): void {
-    if (!this.opts.scene || this.decal || this.pareidoliaCount >= 3) return
+  /** A stain that almost has a face, in the wallpaper, off-center only.
+   *  Hug variant (Spec B): on the wall the player hugs, shoulder height,
+   *  small — visible only at hug distance. Returns true if placed. */
+  private tryPareidolia(hug = false): boolean {
+    if (!this.opts.scene || this.decal || this.pareidoliaCount >= 3) return false
     const p = this.opts.player.position
     const yaw = this.opts.player.yaw
     const ray = new THREE.Raycaster()
     ray.firstHitOnly = true
     for (let i = 0; i < 8; i++) {
       const side = this.rng.chance(0.5) ? 1 : -1
-      const a = yaw + Math.PI + side * this.rng.range(0.85, 1.35) // 49°-77° off gaze
+      // hug variant: probe lateral+slightly-forward at close range —
+      // the face goes on the wall whose company they keep
+      const a = hug
+        ? yaw + side * this.rng.range(1.1, 1.5)
+        : yaw + Math.PI + side * this.rng.range(0.85, 1.35) // 49°-77° off gaze
       const dir = _v.set(-Math.sin(a), 0, -Math.cos(a)).normalize()
-      ray.set(new THREE.Vector3(p.x, 1.58, p.z), dir.clone())
-      ray.far = 9
+      ray.set(new THREE.Vector3(p.x, hug ? 1.45 : 1.58, p.z), dir.clone())
+      ray.far = hug ? 2.2 : 9
       const colliders = this.opts.world.collidersNear(p.x, p.z)
       let best: THREE.Intersection | null = null
       for (const c of colliders) {
         const hit = ray.intersectObject(c, false)[0]
         if (hit && (!best || hit.distance < best.distance)) best = hit
       }
-      if (!best || best.distance < 2.5) continue
+      if (!best || best.distance < (hug ? 0.5 : 2.5)) continue
       const n = best.face?.normal
       if (!n || Math.abs(n.y) > 0.3) continue // walls only
 
-      const mesh = new THREE.Mesh(new THREE.PlaneGeometry(0.62, 0.78), getPareidoliaMaterial())
+      const mesh = new THREE.Mesh(
+        new THREE.PlaneGeometry(hug ? 0.34 : 0.62, hug ? 0.43 : 0.78),
+        getPareidoliaMaterial(),
+      )
       const mat = mesh.material as THREE.MeshStandardMaterial
       mat.opacity = 0
       mesh.position.copy(best.point).addScaledVector(n, 0.015)
@@ -379,12 +486,16 @@ export class Director {
       mesh.rotateZ(this.rng.range(-0.12, 0.12))
       this.opts.scene.add(mesh)
       this.decal = mesh
+      this.decalHug = hug
       this.decalT = 0
       this.decalState = 'in'
       this.pareidoliaCount++
-      return
+      return true
     }
+    return false
   }
+
+  private decalHug = false
 
   private stepDecal(dt: number): void {
     if (!this.decal || !this.opts.scene) return
@@ -401,8 +512,11 @@ export class Director {
       mat.opacity = Math.min(0.42, mat.opacity + dt * 0.1) // 4 s soft arrival
       if (mat.opacity >= 0.42) this.decalState = 'hold'
     }
-    // fixated or approached → it was never there
-    if (this.decalState !== 'out' && (facing > 0.93 || len < 2.4 || this.decalT > 50)) {
+    // fixated or approached → it was never there. (the hug variant LIVES
+    // at close range; only fixation or leaving kills it)
+    const tooClose = this.decalHug ? len < 0.5 : len < 2.4
+    const tooFar = this.decalHug && len > 6
+    if (this.decalState !== 'out' && (facing > 0.93 || tooClose || tooFar || this.decalT > 50)) {
       this.decalState = 'out'
     }
     if (this.decalState === 'out') {
@@ -415,9 +529,129 @@ export class Director {
     }
   }
 
+  // ---- TAPE 2 deck transients -------------------------------------------
+
+  private stepDeckTransients(dt: number): void {
+    // flush queued playback/echo steps (the player's own shoes)
+    while (this.playbackQueue.length > 0 && this.playbackQueue[0].at <= this.time) {
+      const s = this.playbackQueue.shift()!
+      this.opts.audio?.playEchoStep(s.x, s.z, s.gain)
+    }
+    if (this.echoPlusT > 0) this.echoPlusT -= dt
+
+    // D10 carpet flow: time only advances while the card is live
+    if (this.flowT > 0) {
+      this.flowT -= dt
+      carpetFlowUniforms.uFlowTime.value += dt
+      if (this.flowT <= 0) {
+        carpetFlowUniforms.uFlowAmt.value = 0
+        carpetFlowUniforms.uFlowTime.value = 0
+      }
+    }
+
+    // D7 seam drift: degrade slowly, snap back to perfect in one frame
+    if (this.seamT > 0) {
+      this.seamT -= dt
+      const amt = seamDriftUniforms.uSeamAmt.value as number
+      seamDriftUniforms.uSeamAmt.value = Math.min(1, amt + dt / 18)
+      if (this.seamT <= 0) seamDriftUniforms.uSeamAmt.value = 0
+    }
+
+    // Spec A: armed breach waits for a tracking wobble to hide inside.
+    if (this.breachArmT > 0) {
+      this.breachArmT -= dt
+      if (this.vhs?.surging && this.hud) {
+        this.hud.breach(2)
+        this.breachArmT = -1
+      } else if (this.breachArmT <= 0 && this.hud) {
+        // no natural wobble came; make one, then tell the truth inside it
+        this.vhs?.trackingSurge(0.35)
+        const hud = this.hud
+        window.setTimeout(() => hud.breach(2), 140)
+        this.breachArmT = -1
+      }
+    }
+  }
+
+  // ---- Spec B: the exploit picker ----------------------------------------
+
+  /** Strongest-signal exploit, or null. Each type once; max two per run. */
+  private pickExploit(): (() => boolean) | null {
+    if (this.exploitsFired >= 2 || this.profile.age < 90 || this.dread < 0.33) return null
+    const pr = this.profile
+    type Cand = { key: string; score: number; run: () => boolean }
+    const cands: Cand[] = []
+    if (pr.lookbackRate > 2.2 && this.hooks.forwardSilhouette) {
+      cands.push({
+        key: 'fwdSil',
+        score: pr.lookbackRate / 2.2,
+        run: () => this.hooks.forwardSilhouette!(),
+      })
+    }
+    if (pr.lookbackRate < 0.15 && pr.age > 180) {
+      cands.push({
+        key: 'stepBehind',
+        score: 1.4,
+        run: () => {
+          // one carpet footstep, 2 m directly behind, HRTF-exact. One.
+          const p = this.opts.player.position
+          const yaw = this.opts.player.yaw
+          this.opts.audio?.playEchoStep(p.x + Math.sin(yaw) * 2, p.z + Math.cos(yaw) * 2, 0.5)
+          return true
+        },
+      })
+    }
+    if (pr.sprintRatio > 0.45) {
+      cands.push({
+        key: 'loudDebt',
+        score: pr.sprintRatio / 0.45,
+        run: () => {
+          this.loudDebt = true
+          this.hooks.loudDebtNote?.()
+          return true
+        },
+      })
+    }
+    if (pr.wallHug < 0.75) {
+      cands.push({
+        key: 'hugFace',
+        score: 0.75 / Math.max(pr.wallHug, 0.2),
+        run: () => this.tryPareidolia(true),
+      })
+    }
+    if (pr.zoomUsage > 1.4 && this.hooks.autofocus) {
+      cands.push({ key: 'autofocus', score: pr.zoomUsage / 1.4, run: () => this.hooks.autofocus!() })
+    }
+    if (pr.noteReader < 0.5 && this.hooks.doorwayNote) {
+      cands.push({ key: 'doorwayNote', score: 1.3, run: () => this.hooks.doorwayNote!() })
+    }
+    const fresh = cands.filter((c) => !this.exploitUsed.has(c.key))
+    if (fresh.length === 0) return null
+    fresh.sort((a, b) => b.score - a.score)
+    const best = fresh[0]
+    return (): boolean => {
+      const ok = best.run()
+      if (ok) {
+        this.exploitUsed.add(best.key)
+        this.exploitsFired++
+      }
+      return ok
+    }
+  }
+
   // ---- the event pool --------------------------------------------------
 
   private fireEvent(): void {
+    // Spec B: an exploit REPLACES a scheduled wrongness slot — total event
+    // density never rises. The deck only gets smarter, not louder.
+    const exploit = this.pickExploit()
+    if (exploit && this.rng.chance(0.65)) {
+      if (exploit()) {
+        this.eventCount++
+        return
+      }
+    }
+
     const pool: EventClass[] = ['detune', 'impact', 'echo', 'restitch', 'doorClose']
     if (this.dread > 0.2) pool.push('ceilingTick', 'peripheralDim')
     if (this.dread > 0.25) pool.push('brownout')
@@ -426,6 +660,32 @@ export class Director {
     if (this.dread > 0.35 && this.silencesFired < 2 && this.silenceCooldown <= 0) {
       pool.push('silence', 'silence') // weighted: silence is the headliner
     }
+    // ---- TAPE 2 deck: bigger deck, same draw rate (the win is that two
+    // consecutive runs now share few cards) ----
+    const once = (c: EventClass, ok: boolean): void => {
+      if (ok && !this.onceFired.has(c)) pool.push(c)
+    }
+    if (this.dread > 0.28) {
+      pool.push('formant', 'recStop')
+      if (this.echoPlusT <= 0) pool.push('echoPlus')
+      if (this.flowT <= 0) pool.push('carpetFlow')
+      if (this.seamT <= 0) pool.push('seamDrift')
+      pool.push('recedingLights')
+    }
+    once('entrain', this.dread > 0.32)
+    once('wetPrints', this.dread > 0.3 && !!this.hooks.wetPrints)
+    once('phoneRing', this.dread > 0.3 && !this.phonePlaced && !!this.hooks.phoneRing)
+    once('arrowsAgree', this.dread > 0.3 && !!this.hooks.arrowsAgree)
+    once('breach', this.dread > 0.35 && this.hud !== null)
+    once('slowSilence', this.dread > 0.42 && this.silenceCooldown <= 0)
+    once('reverseStamp', this.dread > 0.4 && this.silenceCooldown <= 0 && this.hud !== null)
+    once(
+      'playback',
+      this.dread > 0.55 &&
+        this.stepLog.length > 60 &&
+        this.time - this.stepLog[0].at > 180,
+    )
+    once('closeExhale', this.dread > 0.62)
     let cls = this.rng.pick(pool)
     if (cls === this.lastClass) cls = this.rng.pick(pool) // never twice in a row (one reroll is enough in practice)
     this.lastClass = cls
@@ -528,7 +788,168 @@ export class Director {
         this.restitchBehind()
         break
       }
+
+      // ---- TAPE 2 deck ----
+      case 'recedingLights': {
+        // D1: fixtures click off behind the player, one by one. No off
+        // animation is ever visible — by the time you turn, it's done.
+        const yaw = this.opts.player.yaw
+        const bx = Math.sin(yaw)
+        const bz = Math.cos(yaw)
+        const behind: { x: number; z: number; d: number }[] = []
+        for (const chunk of this.opts.world.all()) {
+          for (const f of chunk.fixtures) {
+            const vx = f.x - p.x
+            const vz = f.z - p.z
+            const d = Math.hypot(vx, vz)
+            if (d < 3 || d > 16) continue
+            if ((vx * bx + vz * bz) / d < 0.45) continue // behind only
+            behind.push({ x: f.x, z: f.z, d })
+          }
+        }
+        behind.sort((a, b) => b.d - a.d) // farthest dies first: it approaches
+        const n = Math.min(behind.length, this.rng.int(3, 5))
+        for (let i = 0; i < n; i++) {
+          const f = behind[i]
+          window.setTimeout(() => {
+            this.opts.lights.killFixture(f.x, f.z, this.rng.range(35, 70))
+            this.opts.audio?.killFixtureHum(f.x, f.z, 50)
+            this.opts.audio?.playTick(f.x, 2.7, f.z, 1.3)
+          }, i * (650 + Math.random() * 350))
+        }
+        break
+      }
+      case 'echoPlus': {
+        this.echoPlusT = 60
+        break
+      }
+      case 'playback': {
+        // D3: your own footsteps from ~10 minutes ago, one chunk over —
+        // correct gait, correct pace. The tape is on both sides of you.
+        const targetAge = 600
+        let i0 = 0
+        for (let i = 0; i < this.stepLog.length; i++) {
+          if (this.time - this.stepLog[i].at <= targetAge) {
+            i0 = i
+            break
+          }
+        }
+        const slice = this.stepLog.slice(i0, i0 + 40)
+        if (slice.length < 8) break
+        // translate the old trail to sit ~18 m off to one side of NOW
+        let cxm = 0
+        let czm = 0
+        for (const s of slice) {
+          cxm += s.x
+          czm += s.z
+        }
+        cxm /= slice.length
+        czm /= slice.length
+        const a = this.rng.range(0, Math.PI * 2)
+        const ox = p.x + Math.cos(a) * 18 - cxm
+        const oz = p.z + Math.sin(a) * 18 - czm
+        const t0 = slice[0].at
+        for (const s of slice) {
+          this.playbackQueue.push({
+            at: this.time + 1.5 + (s.at - t0),
+            x: s.x + ox,
+            z: s.z + oz,
+            gain: 0.26,
+          })
+        }
+        this.playbackQueue.sort((q, r) => q.at - r.at)
+        this.onceFired.add('playback')
+        break
+      }
+      case 'wetPrints': {
+        if (!this.hooks.wetPrints?.()) return this.refund()
+        this.onceFired.add('wetPrints')
+        break
+      }
+      case 'phoneRing': {
+        if (!this.hooks.phoneRing?.()) return this.refund()
+        this.phonePlaced = true
+        this.onceFired.add('phoneRing')
+        break
+      }
+      case 'seamDrift': {
+        const yaw = this.opts.player.yaw
+        seamDriftUniforms.uSeamCenter.value.set(
+          p.x - Math.sin(yaw) * 8,
+          p.z - Math.cos(yaw) * 8,
+        )
+        seamDriftUniforms.uSeamAmt.value = 0.05
+        this.seamT = this.rng.range(25, 40)
+        break
+      }
+      case 'recStop': {
+        this.hud?.holdRecDot(this.rng.range(20, 40))
+        break
+      }
+      case 'reverseStamp': {
+        // D9: silence, and inside it the timestamp runs backwards at 1×.
+        const dur = this.rng.range(8, 13)
+        this.opts.audio?.silence(dur)
+        this.hud?.reverseFor(dur * 0.9, 1)
+        this.silenceCooldown = 180
+        this.onceFired.add('reverseStamp')
+        break
+      }
+      case 'carpetFlow': {
+        carpetFlowUniforms.uFlowAmt.value = 1
+        carpetFlowUniforms.uFlowTime.value = 0
+        this.flowT = this.rng.range(45, 70)
+        break
+      }
+      case 'entrain': {
+        this.opts.audio?.lockHeartbeat(this.stepInterval, 30)
+        this.onceFired.add('entrain')
+        break
+      }
+      case 'formant': {
+        this.opts.audio?.formantSweep()
+        break
+      }
+      case 'closeExhale': {
+        // F4: one breath, rendered at 0.3 m, right-rear quadrant. Once.
+        const yaw = this.opts.player.yaw
+        const rx = Math.cos(yaw) // player-right in world space
+        const rz = -Math.sin(yaw)
+        const bx2 = Math.sin(yaw) // behind
+        const bz2 = Math.cos(yaw)
+        this.opts.audio?.playExhale(
+          p.x + bx2 * 0.22 + rx * 0.2,
+          1.52,
+          p.z + bz2 * 0.22 + rz * 0.2,
+          0.5,
+        )
+        this.onceFired.add('closeExhale')
+        this.dread = Math.min(1, this.dread + 0.06)
+        break
+      }
+      case 'slowSilence': {
+        this.opts.audio?.slowSilence(90, 12)
+        this.silenceCooldown = 300
+        this.onceFired.add('slowSilence')
+        break
+      }
+      case 'breach': {
+        // Spec A: armed, not fired — it hides inside the next wobble.
+        this.breachArmT = 20
+        this.onceFired.add('breach')
+        break
+      }
+      case 'arrowsAgree': {
+        if (!this.hooks.arrowsAgree?.()) return this.refund()
+        this.onceFired.add('arrowsAgree')
+        break
+      }
     }
+  }
+
+  /** A hook couldn't place its prop — give the slot back to the clock. */
+  private refund(): void {
+    this.nextEventAt = this.time + this.rng.range(18, 30)
   }
 
   private pickPeripheralFixture(): { x: number; z: number } | null {

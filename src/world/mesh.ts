@@ -15,6 +15,10 @@ import {
   worldMaterials,
   wingMaterials,
   initWingMaterials,
+  officeMaterials,
+  initOfficeMaterials,
+  floodWaterMaterial,
+  getCrtStaticMaterial,
   getChalkArrowMaterial,
   getScrawlMaterials,
   getPlayScrawlMaterials,
@@ -23,6 +27,7 @@ import {
   getStencilMaterial,
   getFloorArrowMaterial,
 } from './materials'
+import { FLOOD_Y } from './gen'
 
 /**
  * Chunk geometry. All vertices are baked in WORLD space and UVs are the
@@ -94,6 +99,8 @@ export interface BuiltChunk {
   collider: THREE.Mesh
   fixtures: ChunkData['fixtures']
   zone: ChunkData['zone']
+  /** Office CRTs (main checks proximity to the powered one). */
+  crts: ChunkData['crts']
   dispose: () => void
 }
 
@@ -117,12 +124,15 @@ interface WallFace {
 export function buildChunkMeshes(data: ChunkData): BuiltChunk {
   const wing = isWing(data.zone)
   if (wing) initWingMaterials()
+  if (data.zone === 'office') initOfficeMaterials()
 
   const wall = new GeoAccum()
   const trim = new GeoAccum()
   const floor = new GeoAccum()
   const ceil = new GeoAccum()
   const furn = new GeoAccum()
+  const partition = new GeoAccum() // office cubicle fabric
+  const laminate = new GeoAccum() // office desks + CRT shells
   const basin = new GeoAccum()
   const plastic: GeoAccum[] = [new GeoAccum(), new GeoAccum(), new GeoAccum(), new GeoAccum()]
   const hiddenColliders = new GeoAccum() // collider-only volumes (slide tubes)
@@ -280,6 +290,27 @@ export function buildChunkMeshes(data: ChunkData): BuiltChunk {
 
   // Furniture
   for (const f of data.furniture) {
+    if (f.kind === 'cubicle') {
+      // U-shaped fabric pod, 1.9 m square, 1.42 m high — head height when
+      // seated, eye height when crouched, occlusion either way (G1).
+      const H = 1.42
+      const T = 0.07
+      const R = 0.95
+      if (f.rot === 0) {
+        // opens toward +x
+        addBoxTo(partition, f.x, f.z - R, R * 2, H, T)
+        addBoxTo(partition, f.x, f.z + R, R * 2, H, T)
+        addBoxTo(partition, f.x - R, f.z, T, H, R * 2 - T)
+        addBoxTo(laminate, f.x - R + 0.36, f.z, 0.6, 0.04, 1.5, 0.7)
+      } else {
+        // opens toward +z
+        addBoxTo(partition, f.x - R, f.z, T, H, R * 2)
+        addBoxTo(partition, f.x + R, f.z, T, H, R * 2)
+        addBoxTo(partition, f.x, f.z - R, R * 2 - T, H, T)
+        addBoxTo(laminate, f.x, f.z - R + 0.36, 1.5, 0.04, 0.6, 0.7)
+      }
+      continue
+    }
     if (f.kind === 'desk') {
       const [w, d] = f.rot === 0 ? [1.5, 0.7] : [0.7, 1.5]
       addFurnBox(f.x, f.z, w, 0.06, d, 0.68) // top slab
@@ -415,6 +446,47 @@ export function buildChunkMeshes(data: ChunkData): BuiltChunk {
     band.addFace(_o.set(b.x + b.w, bandTop - bandH, b.z + b.d - 0.006), NX, b.w, PY, bandH, NZ)
   }
 
+  // ---- office CRTs (G1): all dead. except one. ----
+  for (const crt of data.crts) {
+    const facingX = crt.rot === 0
+    const cxr = facingX ? crt.x - 0.59 : crt.x
+    const czr = facingX ? crt.z : crt.z - 0.59
+    addBoxTo(laminate, cxr, czr, facingX ? 0.34 : 0.4, 0.34, facingX ? 0.4 : 0.34, 0.74)
+    const screenGeo = new THREE.PlaneGeometry(0.28, 0.22)
+    const screen = new THREE.Mesh(
+      screenGeo,
+      crt.powered ? getCrtStaticMaterial() : officeMaterials.crtDead,
+    )
+    if (facingX) {
+      screen.position.set(cxr + 0.176, 0.91, czr)
+      screen.rotation.y = Math.PI / 2
+    } else {
+      screen.position.set(cxr, 0.91, czr + 0.176)
+    }
+    group.add(screen)
+    extraGeos.push(screenGeo)
+    if (crt.powered) {
+      // the only screen light in the game — cold, wrong, flickerless
+      const glow = new THREE.PointLight(0xa8c4cf, 1.1, 4.5, 1.8)
+      glow.position.set(
+        facingX ? cxr + 0.5 : cxr,
+        1.0,
+        facingX ? czr : czr + 0.5,
+      )
+      group.add(glow)
+    }
+  }
+
+  // ---- flooded zone (G2): the water owns the whole floor ----
+  if (data.zone === 'flooded') {
+    const floodGeo = new THREE.PlaneGeometry(CHUNK_SIZE, CHUNK_SIZE)
+    const flood = new THREE.Mesh(floodGeo, floodWaterMaterial)
+    flood.rotation.x = -Math.PI / 2
+    flood.position.set(x0 + CHUNK_SIZE / 2, FLOOD_Y, z0 + CHUNK_SIZE / 2)
+    group.add(flood)
+    extraGeos.push(floodGeo)
+  }
+
   // Chalk arrows on long wall faces — seeded, sparse, directionally honest
   // about nothing (DESIGN.md §11: "DON'T trust the arrows"). Not in the
   // poolrooms: nothing marks the tile. Nothing has ever marked the tile.
@@ -501,7 +573,11 @@ export function buildChunkMeshes(data: ChunkData): BuiltChunk {
         ? wingMaterials.carnival
         : data.zone === 'garage'
           ? wingMaterials.concrete
-          : worldMaterials.carpet
+          : data.zone === 'office'
+            ? officeMaterials.carpetTiles
+            : data.zone === 'flooded'
+              ? worldMaterials.carpetDamp
+              : worldMaterials.carpet
   const ceilMat =
     data.zone === 'pool'
       ? wingMaterials.tile
@@ -525,6 +601,8 @@ export function buildChunkMeshes(data: ChunkData): BuiltChunk {
     [wall, wallMat],
     [trim, worldMaterials.trim],
     [furn, worldMaterials.furniture],
+    [partition, officeMaterials.partition],
+    [laminate, officeMaterials.laminate],
     [basin, wingMaterials.tileFloor],
     [band, wingMaterials.navyBand],
     [plastic[0], wingMaterials.plastics[0]],
@@ -578,7 +656,7 @@ export function buildChunkMeshes(data: ChunkData): BuiltChunk {
 
   // Collider: walls + pillars + floor + ceiling + basins + structures merged
   // into one BVH mesh. Water and balls are not in it — water is not floor.
-  const colliderParts = [floor, ceil, wall, furn, basin, hiddenColliders, ...plastic]
+  const colliderParts = [floor, ceil, wall, furn, partition, laminate, basin, hiddenColliders, ...plastic]
   const colliderAccum = new GeoAccum()
   let offset = 0
   for (const part of colliderParts) {
@@ -601,6 +679,7 @@ export function buildChunkMeshes(data: ChunkData): BuiltChunk {
     collider,
     fixtures: data.fixtures,
     zone: data.zone,
+    crts: data.crts,
     dispose: () => {
       for (const geo of geos) geo.dispose()
       for (const geo of extraGeos) geo.dispose()

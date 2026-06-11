@@ -635,6 +635,132 @@ export const manilaMaterial = new THREE.MeshStandardMaterial({
   roughness: 0.82,
 })
 
+// ---------------------------------------------------------------------------
+// TAPE 2 expansion materials
+// ---------------------------------------------------------------------------
+
+/** Office Pocket (G1): 2002 cubicle island. Fabric, laminate, beige plastic. */
+export const officeMaterials = {
+  partition: new THREE.MeshStandardMaterial({ color: 0x6e7077, roughness: 0.98 }),
+  partitionTrim: new THREE.MeshStandardMaterial({ color: 0x9a958a, roughness: 0.6 }),
+  laminate: new THREE.MeshStandardMaterial({ color: 0xb9ad94, roughness: 0.55 }),
+  crtShell: new THREE.MeshStandardMaterial({ color: 0xc9c2ae, roughness: 0.65 }),
+  /** Dead screen: dark green-grey glass. It reflects you, barely. */
+  crtDead: new THREE.MeshStandardMaterial({ color: 0x1c211e, roughness: 0.18, metalness: 0.1 }),
+  carpetTiles: new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.96 }),
+}
+
+/** Flooded zone (G2): the water is shallow, dark, and very patient. */
+export const floodWaterMaterial = new THREE.MeshStandardMaterial({
+  color: 0x3a3d2e,
+  roughness: 0.07,
+  metalness: 0.0,
+  transparent: true,
+  opacity: 0.62,
+})
+
+/** The one powered CRT in the office: animated static. The only screen
+ *  light in the game. Basic (unlit) — a screen IS a light. */
+let crtStaticMat: THREE.MeshBasicMaterial | null = null
+let crtStaticCanvas: HTMLCanvasElement | null = null
+let crtStaticTex: THREE.CanvasTexture | null = null
+let crtStaticLast = 0
+export function getCrtStaticMaterial(): THREE.MeshBasicMaterial {
+  if (crtStaticMat) return crtStaticMat
+  crtStaticCanvas = document.createElement('canvas')
+  crtStaticCanvas.width = crtStaticCanvas.height = 64
+  drawCrtStatic()
+  crtStaticTex = new THREE.CanvasTexture(crtStaticCanvas)
+  crtStaticTex.magFilter = THREE.NearestFilter
+  crtStaticMat = new THREE.MeshBasicMaterial({ map: crtStaticTex, fog: false })
+  return crtStaticMat
+}
+
+function drawCrtStatic(): void {
+  if (!crtStaticCanvas) return
+  const ctx = crtStaticCanvas.getContext('2d')!
+  const img = ctx.createImageData(64, 64)
+  for (let i = 0; i < img.data.length; i += 4) {
+    const v = 30 + Math.random() * 170
+    img.data[i] = v * 0.82
+    img.data[i + 1] = v
+    img.data[i + 2] = v * 0.9
+    img.data[i + 3] = 255
+  }
+  // a rolling dark band, like the refresh fighting the tape
+  const band = Math.floor((performance.now() * 0.02) % 64)
+  for (let y = band; y < Math.min(64, band + 7); y++) {
+    for (let x = 0; x < 64; x++) {
+      const k = (y * 64 + x) * 4
+      img.data[k] *= 0.45
+      img.data[k + 1] *= 0.45
+      img.data[k + 2] *= 0.45
+    }
+  }
+  ctx.putImageData(img, 0, 0)
+}
+
+/** Call from the frame loop; redraws at ~12.5 Hz (CRTs are not smooth). */
+export function updateCrtStatic(timeMs: number): void {
+  if (!crtStaticTex || timeMs - crtStaticLast < 80) return
+  crtStaticLast = timeMs
+  drawCrtStatic()
+  crtStaticTex.needsUpdate = true
+}
+
+/**
+ * Lore egg 2 — "the arrows agree". A single chevron matching the wallpaper
+ * motif, same ink, same weight. The horror is only in which way it points.
+ */
+let chevronMat: THREE.MeshStandardMaterial | null = null
+export function getChevronMaterial(): THREE.MeshStandardMaterial {
+  if (chevronMat) return chevronMat
+  const S = 128
+  const c = document.createElement('canvas')
+  c.width = c.height = S
+  const ctx = c.getContext('2d')!
+  ctx.strokeStyle = 'rgba(122, 106, 52, 0.62)'
+  ctx.lineWidth = 7
+  ctx.lineCap = 'round'
+  ctx.beginPath()
+  ctx.moveTo(38, 44)
+  ctx.lineTo(64, 78)
+  ctx.lineTo(90, 44)
+  ctx.stroke()
+  const tex = new THREE.CanvasTexture(c)
+  tex.colorSpace = THREE.SRGBColorSpace
+  chevronMat = new THREE.MeshStandardMaterial({
+    map: tex,
+    transparent: true,
+    depthWrite: false,
+    roughness: 1,
+    polygonOffset: true,
+    polygonOffsetFactor: -1,
+  })
+  return chevronMat
+}
+
+/**
+ * D10 — carpet flow. The pattern advects at ~1 cm/s, but only in
+ * peripheral vision: the velocity is masked to zero at the center of the
+ * frame. Gaze-contingent via gl_FragCoord; subtle enough to be deniable.
+ */
+export const carpetFlowUniforms = {
+  uFlowAmt: { value: 0 },
+  uFlowTime: { value: 0 },
+  uFlowRes: { value: new THREE.Vector2(1920, 1080) },
+}
+
+/**
+ * D7 — seam drift. Wallpaper seam alignment degrades along a corridor
+ * (per-segment hash offset, ramped by distance from the event center),
+ * then snaps back to perfect at the next junction.
+ */
+export const seamDriftUniforms = {
+  uSeamAmt: { value: 0 },
+  uSeamCenter: { value: new THREE.Vector2(0, 0) },
+}
+
 /** Column stencil. Every column says LEVEL 3. Every single one. */
 let stencilMat: THREE.MeshStandardMaterial | null = null
 export function getStencilMaterial(): THREE.MeshStandardMaterial {
@@ -658,6 +784,50 @@ export function getStencilMaterial(): THREE.MeshStandardMaterial {
     polygonOffsetFactor: -1,
   })
   return stencilMat
+}
+
+/** 2002 office carpet tiles: 50 cm grid, grey-blue, coffee ghosts. */
+function makeOfficeCarpetTexture(): THREE.CanvasTexture {
+  const S = 512 // 2 m world period → 4 tiles
+  const c = document.createElement('canvas')
+  c.width = c.height = S
+  const ctx = c.getContext('2d')!
+  const rnd = seededRnd(2002)
+  const T = 128
+  for (let y = 0; y < S; y += T) {
+    for (let x = 0; x < S; x += T) {
+      const v = 78 + Math.floor(rnd() * 14)
+      ctx.fillStyle = `rgb(${v - 6}, ${v}, ${v + 10})`
+      ctx.fillRect(x, y, T, T)
+      // tile direction alternates — the checker sheen of cheap carpet tile
+      ctx.globalAlpha = 0.12
+      ctx.fillStyle = (x / T + y / T) % 2 === 0 ? '#ffffff' : '#000000'
+      ctx.fillRect(x, y, T, T)
+      ctx.globalAlpha = 1
+      ctx.strokeStyle = 'rgba(20, 22, 28, 0.45)'
+      ctx.strokeRect(x + 0.5, y + 0.5, T - 1, T - 1)
+    }
+  }
+  // fiber noise + old coffee
+  for (let i = 0; i < 2400; i++) {
+    const v = 60 + Math.floor(rnd() * 60)
+    ctx.fillStyle = `rgba(${v}, ${v + 4}, ${v + 12}, 0.18)`
+    ctx.fillRect(rnd() * S, rnd() * S, 1 + rnd() * 2, 1 + rnd() * 2)
+  }
+  ctx.globalCompositeOperation = 'multiply'
+  stainPass(ctx, S, 4, 'rgba(96, 80, 52, 0.30)')
+  return new THREE.CanvasTexture(c)
+}
+
+let officeInitialized = false
+/** Lazy, like the wings: only pay if an office streams in. */
+export function initOfficeMaterials(): void {
+  if (officeInitialized) return
+  officeInitialized = true
+  const tex = makeOfficeCarpetTexture()
+  setupTiling(tex, 2.0, true)
+  officeMaterials.carpetTiles.map = tex
+  officeMaterials.carpetTiles.needsUpdate = true
 }
 
 let wingsInitialized = false
@@ -842,19 +1012,66 @@ export async function initWorldMaterials(): Promise<void> {
   // geometry is baked in world space (identity transforms), so `transformed`
   // IS the world position — cheapest possible contact-occlusion fake.
   m.wall.onBeforeCompile = (shader) => {
+    shader.uniforms.uSeamAmt = seamDriftUniforms.uSeamAmt
+    shader.uniforms.uSeamCenter = seamDriftUniforms.uSeamCenter
     shader.vertexShader = shader.vertexShader
-      .replace('#include <common>', '#include <common>\nvarying float vGrimeY;')
-      .replace('#include <begin_vertex>', '#include <begin_vertex>\n  vGrimeY = transformed.y;')
+      .replace('#include <common>', '#include <common>\nvarying float vGrimeY;\nvarying vec2 vWorldXZ;')
+      .replace(
+        '#include <begin_vertex>',
+        '#include <begin_vertex>\n  vGrimeY = transformed.y;\n  vWorldXZ = transformed.xz;',
+      )
     shader.fragmentShader = shader.fragmentShader
-      .replace('#include <common>', '#include <common>\nvarying float vGrimeY;')
+      .replace(
+        '#include <common>',
+        '#include <common>\nvarying float vGrimeY;\nvarying vec2 vWorldXZ;\nuniform float uSeamAmt;\nuniform vec2 uSeamCenter;',
+      )
       .replace(
         '#include <map_fragment>',
-        `#include <map_fragment>
+        `#ifdef USE_MAP
+  {
+    // D7 seam drift: per-segment hash offset, ramped by distance from the
+    // event center. Snaps to zero (perfect) the instant uSeamAmt drops.
+    vec2 wUv = vMapUv;
+    float seg = floor(vWorldXZ.x / 2.4) * 7.0 + floor(vWorldXZ.y / 2.4);
+    float sh = fract(sin(seg * 127.1) * 43758.5453) - 0.5;
+    float sd = distance(vWorldXZ, uSeamCenter);
+    wUv.x += uSeamAmt * sh * 0.21 * smoothstep(16.0, 3.0, sd);
+    vec4 sampledDiffuseColor = texture2D(map, wUv);
+    diffuseColor *= sampledDiffuseColor;
+  }
+#endif
   {
     float lowGrime = 1.0 - 0.30 * smoothstep(0.62, 0.05, vGrimeY);
     float highGrime = 1.0 - 0.16 * smoothstep(2.30, 2.78, vGrimeY);
     diffuseColor.rgb *= lowGrime * highGrime;
   }`,
+      )
+  }
+
+  // D10 carpet flow: the pattern advects at ~1 cm/s, masked to zero in the
+  // center of the frame. Peripheral vision only. Deniable by design.
+  m.carpet.onBeforeCompile = (shader) => {
+    shader.uniforms.uFlowAmt = carpetFlowUniforms.uFlowAmt
+    shader.uniforms.uFlowTime = carpetFlowUniforms.uFlowTime
+    shader.uniforms.uFlowRes = carpetFlowUniforms.uFlowRes
+    shader.fragmentShader = shader.fragmentShader
+      .replace(
+        '#include <common>',
+        '#include <common>\nuniform float uFlowAmt;\nuniform float uFlowTime;\nuniform vec2 uFlowRes;',
+      )
+      .replace(
+        '#include <map_fragment>',
+        `#ifdef USE_MAP
+  {
+    vec2 fUv = vMapUv;
+    float fMask = smoothstep(0.16, 0.42, distance(gl_FragCoord.xy / uFlowRes, vec2(0.5)));
+    fUv += uFlowAmt * fMask * uFlowTime * vec2(0.00833, 0.00833); // 1 cm/s in 1.2 m UV space
+    vec4 sampledDiffuseColor = texture2D(map, fUv);
+    diffuseColor *= sampledDiffuseColor;
+  }
+#else
+  #include <map_fragment>
+#endif`,
       )
   }
 

@@ -19,12 +19,13 @@ const STRIDE_CROUCH = 0.55
 
 const STEP_PITCH_JITTER = 0.07 // ±7%
 
-export type Surface = 'carpet' | 'tile' | 'concrete'
+export type Surface = 'carpet' | 'tile' | 'concrete' | 'water'
 
-/** Tile slaps bright and wet; concrete cracks mid; carpet swallows. */
-const SURFACE_LP: Record<Surface, number> = { carpet: 1600, tile: 3400, concrete: 2400 }
-const SURFACE_PITCH: Record<Surface, number> = { carpet: 0.85, tile: 1.0, concrete: 0.92 }
-const SURFACE_VOL: Record<Surface, number> = { carpet: 1.0, tile: 1.25, concrete: 1.15 }
+/** Tile slaps bright and wet; concrete cracks mid; carpet swallows;
+ *  water swallows everything and replaces it with its own sound. */
+const SURFACE_LP: Record<Surface, number> = { carpet: 1600, tile: 3400, concrete: 2400, water: 900 }
+const SURFACE_PITCH: Record<Surface, number> = { carpet: 0.85, tile: 1.0, concrete: 0.92, water: 0.7 }
+const SURFACE_VOL: Record<Surface, number> = { carpet: 1.0, tile: 1.25, concrete: 1.15, water: 0.35 }
 
 const STEP_VOL_WALK = 0.45
 const STEP_VOL_SPRINT = 0.62
@@ -55,10 +56,13 @@ export class Foley {
   private stamina = 0 // 0 = rested, 1 = winded
   private sprintTime = 0
 
+  private readonly noise: AudioBuffer
+
   constructor(ctx: AudioContext, dest: AudioNode, buffers: AudioBuffer[], breathNoise: AudioBuffer) {
     this.ctx = ctx
     this.dest = dest
     this.buffers = buffers
+    this.noise = breathNoise
 
     // Breath = pink noise → bandpass → VCA driven by slow LFO (inhale/exhale).
     this.breathGain = ctx.createGain()
@@ -182,6 +186,36 @@ export class Foley {
     vca.connect(splitL).connect(merger, 0, 0)
     vca.connect(splitR).connect(merger, 0, 1)
     merger.connect(this.dest)
+
+    // Wading overlay (Spec F5): each water step is mostly the water's
+    // sound — a soft churned slosh — with the muffled step underneath.
+    if (this.surface === 'water') {
+      const w = ctx.createBufferSource()
+      w.buffer = this.noise
+      w.playbackRate.value = 0.8 + Math.random() * 0.25
+      const bp = ctx.createBiquadFilter()
+      bp.type = 'bandpass'
+      bp.Q.value = 0.7
+      const t0 = ctx.currentTime
+      bp.frequency.setValueAtTime(620 + Math.random() * 200, t0)
+      bp.frequency.exponentialRampToValueAtTime(240, t0 + 0.28)
+      const wg = ctx.createGain()
+      wg.gain.setValueAtTime(0, t0)
+      wg.gain.linearRampToValueAtTime(0.2 * (sprinting ? 1.5 : 1), t0 + 0.03)
+      wg.gain.setTargetAtTime(0, t0 + 0.07, 0.09)
+      w.connect(bp).connect(wg).connect(this.dest)
+      w.start(t0)
+      w.stop(t0 + 0.5)
+      w.onended = (): void => {
+        try {
+          w.disconnect()
+          bp.disconnect()
+          wg.disconnect()
+        } catch {
+          /* torn down */
+        }
+      }
+    }
 
     const t = ctx.currentTime
     src.start(t)
