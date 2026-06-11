@@ -679,7 +679,7 @@ export class Narrative {
           // line static, then this room's own hum, one second late
           audio.playPhoneAnswer(hp.x, hp.y, hp.z)
         } else {
-          audio.playTick(hp.x, hp.y, hp.z, 1.2) // dead line. it gave up first.
+          audio.playPhoneDeadLine(hp.x, hp.y, hp.z) // it gave up first.
         }
         this.ringingPhone = null
       },

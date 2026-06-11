@@ -72,6 +72,10 @@ const DOOR_CLOSE_FILES = [
 
 const CREAK_FILE = 'audio/doors/creaky_door_hinge.wav'
 
+// 2002 desk phone (processed derivatives — see docs/ASSET-LICENSES.md)
+const PHONE_CLICK_FILE = 'audio/phone/click.ogg'
+const PHONE_DEAD_FILE = 'audio/phone/deadline.ogg'
+
 const GLITCH_FILES = [
   'audio/glitch/lowDown.ogg',
   'audio/glitch/lowRandom.ogg',
@@ -97,6 +101,8 @@ export interface SampleBank {
   doorCloses: AudioBuffer[]
   creak: AudioBuffer | null
   glitches: AudioBuffer[]
+  phoneClick: AudioBuffer | null
+  phoneDead: AudioBuffer | null
 }
 
 async function tryLoad(ctx: AudioContext, path: string): Promise<AudioBuffer | null> {
@@ -132,6 +138,8 @@ export async function loadSampleBank(ctx: AudioContext): Promise<SampleBank> {
     doorCloses,
     creak,
     glitches,
+    phoneClick,
+    phoneDead,
   ] = await Promise.all([
     loadList(ctx, FOOTSTEP_FILES),
     loadList(ctx, FOOTSTEP_LEATHER_FILES),
@@ -148,6 +156,8 @@ export async function loadSampleBank(ctx: AudioContext): Promise<SampleBank> {
     loadList(ctx, DOOR_CLOSE_FILES),
     tryLoad(ctx, CREAK_FILE),
     loadList(ctx, GLITCH_FILES),
+    tryLoad(ctx, PHONE_CLICK_FILE),
+    tryLoad(ctx, PHONE_DEAD_FILE),
   ])
 
   return {
@@ -161,6 +171,8 @@ export async function loadSampleBank(ctx: AudioContext): Promise<SampleBank> {
     doorCloses,
     creak,
     glitches,
+    phoneClick,
+    phoneDead,
   }
 }
 

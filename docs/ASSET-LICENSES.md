@@ -43,6 +43,21 @@ Every page below was opened and its license badge was verified to be CC0. No CC-
 
 No license rejections needed — all six requested OGA pages were already CC0 as listed in the research brief.
 
+## Audio — owner-licensed sample packs (processed derivatives only)
+
+These come from sample packs Daniel owns (FILM CRUX "SINGULARITY 2" EULA;
+"FOUR Editors Sound Effects" bundle). Their licenses permit use, modification,
+and incorporation into published work, but NOT redistribution of the raw
+contents. Accordingly the repo ships **processed derivatives only** — trimmed,
+re-pitched, EQ-filtered, mono-folded, re-encoded OGGs baked for this game's
+tape pipeline — never the original files. ⚠️ Unlike everything above, these
+are NOT CC0: do not extract them from this repo for reuse elsewhere.
+
+| Derived asset | Source sample (pack) | Processing | Local path |
+|---|---|---|---|
+| Receiver click | "Telephone Click" (FOUR Editors / Hollywood Essentials) | HP 180 Hz, LP 6.5 kHz, mono, ogg q4 | `public/audio/phone/click.ogg` |
+| Dead line | "Telephone Dead Line" (FOUR Editors / Hollywood Essentials) | telephone band 300–3400 Hz, −2 dB, mono | `public/audio/phone/deadline.ogg` |
+
 ## Fonts — Google Fonts (SIL OFL 1.1)
 
 Downloaded the Latin subset woff2 from `fonts.gstatic.com` after parsing the `fonts.googleapis.com/css2?...` response with a desktop browser User-Agent.

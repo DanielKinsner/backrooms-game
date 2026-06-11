@@ -295,6 +295,8 @@ export class AudioEngine {
         doorCloses: [],
         creak: null,
         glitches: [],
+        phoneClick: null,
+        phoneDead: null,
       }
     }
 
@@ -762,7 +764,7 @@ export class AudioEngine {
         vca.gain.cancelScheduledValues(tt)
         vca.gain.setValueAtTime(vca.gain.value, tt)
         vca.gain.linearRampToValueAtTime(0, tt + 0.06)
-        this.playTick(x, y, z, 1.4)
+        this.playPhoneClick(x, y, z)
         for (const o of oscs) o.stop(tt + 0.1)
         window.setTimeout(() => {
           try {
@@ -1005,6 +1007,7 @@ export class AudioEngine {
    */
   playPhoneAnswer(x: number, y: number, z: number): void {
     if (!this.ctx || !this.noiseBuf) return
+    this.playPhoneClick(x, y, z, 0.45) // the receiver, lifted
     const ctx = this.ctx
     const t = ctx.currentTime
     // telephone band: 300–3400 Hz
@@ -1041,7 +1044,7 @@ export class AudioEngine {
       this.cleanup(o, [g], t + 5.4)
     }
     // the far end hangs up first
-    window.setTimeout(() => this.playTick(x, y, z, 1.6), 5300)
+    window.setTimeout(() => this.playPhoneClick(x, y, z, 0.55), 5300)
     this.cleanup(stat, [statG, tel, out, panner], t + 6)
   }
 
@@ -1196,6 +1199,57 @@ export class AudioEngine {
       osc.stop(t + 0.3)
       this.cleanup(osc, [vca], t + 0.35)
     }
+  }
+
+  /** Play a decoded buffer at a world position (one-shot, sfx bus). */
+  private playBufferAt(
+    buf: AudioBuffer,
+    x: number,
+    y: number,
+    z: number,
+    gain: number,
+    maxDist = 25,
+    rate = 1,
+  ): void {
+    if (!this.ctx) return
+    const ctx = this.ctx
+    const src = ctx.createBufferSource()
+    src.buffer = buf
+    src.playbackRate.value = rate
+    const vca = ctx.createGain()
+    vca.gain.value = gain
+    const panner = this.makePanner(x, y, z, maxDist)
+    src.connect(vca).connect(panner).connect(this.sfxBus)
+    const t = ctx.currentTime
+    src.start(t)
+    this.cleanup(src, [vca, panner], t + buf.duration / rate + 0.1)
+  }
+
+  /** The real receiver click (sampled). Falls back to the synth tick. */
+  playPhoneClick(x: number, y: number, z: number, gain = 0.5): void {
+    const buf = this.samples?.phoneClick
+    if (buf) this.playBufferAt(buf, x, y, z, gain, 18)
+    else this.playTick(x, y, z, 1.4)
+  }
+
+  /** Receiver up on a line that already gave up: click, then dead air. */
+  playPhoneDeadLine(x: number, y: number, z: number): void {
+    this.playPhoneClick(x, y, z, 0.5)
+    const buf = this.samples?.phoneDead
+    if (!buf || !this.ctx) return
+    const ctx = this.ctx
+    const src = ctx.createBufferSource()
+    src.buffer = buf
+    const vca = ctx.createGain()
+    const t = ctx.currentTime
+    vca.gain.setValueAtTime(0, t + 0.3)
+    vca.gain.linearRampToValueAtTime(0.18, t + 0.6)
+    vca.gain.setValueAtTime(0.18, t + buf.duration - 0.6)
+    vca.gain.linearRampToValueAtTime(0, t + buf.duration)
+    const panner = this.makePanner(x, y, z, 14)
+    src.connect(vca).connect(panner).connect(this.sfxBus)
+    src.start(t + 0.3)
+    this.cleanup(src, [vca, panner], t + buf.duration + 0.5)
   }
 
   private makePanner(x: number, y: number, z: number, maxDistance: number): PannerNode {
