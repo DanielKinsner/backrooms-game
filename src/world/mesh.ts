@@ -18,6 +18,8 @@ import {
   officeMaterials,
   initOfficeMaterials,
   floodWaterMaterial,
+  floodedMaterials,
+  initFloodedMaterials,
   getCrtStaticMaterial,
   getChalkArrowMaterial,
   getScrawlMaterials,
@@ -125,6 +127,7 @@ export function buildChunkMeshes(data: ChunkData): BuiltChunk {
   const wing = isWing(data.zone)
   if (wing) initWingMaterials()
   if (data.zone === 'office') initOfficeMaterials()
+  if (data.zone === 'flooded') initFloodedMaterials()
 
   const wall = new GeoAccum()
   const trim = new GeoAccum()
@@ -576,7 +579,7 @@ export function buildChunkMeshes(data: ChunkData): BuiltChunk {
           : data.zone === 'office'
             ? officeMaterials.carpetTiles
             : data.zone === 'flooded'
-              ? worldMaterials.carpetDamp
+              ? floodedMaterials.floor
               : worldMaterials.carpet
   const ceilMat =
     data.zone === 'pool'
@@ -591,7 +594,9 @@ export function buildChunkMeshes(data: ChunkData): BuiltChunk {
         ? wingMaterials.playWall
         : data.zone === 'garage'
           ? wingMaterials.concretePlain
-          : worldMaterials.wall
+          : data.zone === 'flooded'
+            ? floodedMaterials.wall
+            : worldMaterials.wall
 
   const geos: THREE.BufferGeometry[] = []
   const buckets: Array<[GeoAccum, THREE.Material]> = [

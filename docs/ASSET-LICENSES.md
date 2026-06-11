@@ -80,6 +80,8 @@ this project specifically. No external license applies. Shipped as 1K JPGs;
 | Stained drop-ceiling tiles | `Level0_DropCeiling_StainedTiles` | `public/textures/ceiling_stained/` |
 | Fluorescent diffuser (color + emissive mask) | `Level0_FluorescentDiffuser_GrimyEmissive` | `public/textures/diffuser/` |
 | Damp utility concrete (full PBR set) | `Utility_DampConcrete` | `public/textures/concrete_damp/` |
+| Soaked carpet (flooded zone floor) | `Level0_SoakedCarpetFloodedStretch` | `public/textures/carpet_soaked/` |
+| Damp-decay wallpaper (flooded zone walls) | `Level0_Wallpaper_DampDecay` | `public/textures/wall_decay/` |
 
 ## Fonts — Google Fonts (SIL OFL 1.1)
 

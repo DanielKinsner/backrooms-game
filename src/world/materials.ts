@@ -659,6 +659,41 @@ export const floodWaterMaterial = new THREE.MeshStandardMaterial({
   opacity: 0.62,
 })
 
+/** Flooded zone surfaces (Daniel-generated): soaked carpet under the
+ *  water, water-run decayed wallpaper above it. Lazy + async. */
+export const floodedMaterials = {
+  floor: new THREE.MeshStandardMaterial({ color: 0x5c5538, roughness: 0.55 }),
+  wall: new THREE.MeshStandardMaterial({ color: 0x9d8d54, roughness: 0.95 }),
+}
+
+let floodedInitialized = false
+export function initFloodedMaterials(): void {
+  if (floodedInitialized) return
+  floodedInitialized = true
+  const loader = new THREE.TextureLoader()
+  const base = import.meta.env.BASE_URL
+  const wire = async (
+    mat: THREE.MeshStandardMaterial,
+    dir: string,
+    period: number,
+    normalScale: number,
+  ): Promise<void> => {
+    const [c, n, r] = await Promise.all([
+      loader.loadAsync(`${base}textures/${dir}/color.jpg`),
+      loader.loadAsync(`${base}textures/${dir}/normal.jpg`),
+      loader.loadAsync(`${base}textures/${dir}/rough.jpg`),
+    ])
+    mat.map = setupTiling(c, period, true)
+    mat.normalMap = setupTiling(n, period)
+    mat.normalScale.setScalar(normalScale)
+    mat.roughnessMap = setupTiling(r, period)
+    mat.color.set(0xffffff)
+    mat.needsUpdate = true
+  }
+  void wire(floodedMaterials.floor, 'carpet_soaked', 1.6, 0.8).catch(() => undefined)
+  void wire(floodedMaterials.wall, 'wall_decay', 2.4, 0.5).catch(() => undefined)
+}
+
 /** The one powered CRT in the office: animated static. The only screen
  *  light in the game. Basic (unlit) — a screen IS a light. */
 let crtStaticMat: THREE.MeshBasicMaterial | null = null
