@@ -1005,14 +1005,27 @@ function makeWallpaper(): THREE.CanvasTexture {
     ctx.fillRect(x, 0, w, S)
   }
 
-  // stripe pairs every 1.2 m (512 px), thin darker lines with arrow motif between
-  ctx.fillStyle = 'rgba(122, 106, 52, 0.55)'
-  for (const gx of [128, 640]) {
+  drawWallpaperMotif(ctx, S, 0.55)
+
+  // age: blotchy stains (multiply, wrap-safe) — present but not black-mold
+  ctx.globalCompositeOperation = 'multiply'
+  stainPass(ctx, S, 7, 'rgba(150, 134, 76, 0.22)')
+  stainPass(ctx, S, 4, 'rgba(110, 96, 52, 0.16)')
+  return new THREE.CanvasTexture(c)
+}
+
+/** The canon stripe pairs + arrow motif (notes: "DON'T trust the arrows";
+ *  the arrows-agree card swaps these). Load-bearing — every wallpaper
+ *  variant must carry it. */
+function drawWallpaperMotif(ctx: CanvasRenderingContext2D, S: number, alpha: number): void {
+  ctx.save()
+  ctx.globalCompositeOperation = 'source-over'
+  ctx.fillStyle = `rgba(122, 106, 52, ${alpha})`
+  for (const gx of [S / 8, (S * 5) / 8]) {
     ctx.fillRect(gx - 14, 0, 5, S)
     ctx.fillRect(gx + 9, 0, 5, S)
     // small arrow/chevron glyphs running down the gap
-    ctx.save()
-    ctx.strokeStyle = 'rgba(122, 106, 52, 0.5)'
+    ctx.strokeStyle = `rgba(122, 106, 52, ${alpha * 0.9})`
     ctx.lineWidth = 2.5
     for (let y = 24; y < S; y += 64) {
       ctx.beginPath()
@@ -1021,13 +1034,19 @@ function makeWallpaper(): THREE.CanvasTexture {
       ctx.lineTo(gx + 5, y)
       ctx.stroke()
     }
-    ctx.restore()
   }
+  ctx.restore()
+}
 
-  // age: blotchy stains (multiply, wrap-safe) — present but not black-mold
-  ctx.globalCompositeOperation = 'multiply'
-  stainPass(ctx, S, 7, 'rgba(150, 134, 76, 0.22)')
-  stainPass(ctx, S, 4, 'rgba(110, 96, 52, 0.16)')
+/** Hybrid wallpaper: Daniel's generated mono-yellow base with the canon
+ *  motif drawn over it. Best of both — his grain, the maze's lie. */
+function hybridWallpaper(img: HTMLImageElement): THREE.CanvasTexture {
+  const S = 1024
+  const c = document.createElement('canvas')
+  c.width = c.height = S
+  const ctx = c.getContext('2d')!
+  ctx.drawImage(img, 0, 0, S, S)
+  drawWallpaperMotif(ctx, S, 0.4)
   return new THREE.CanvasTexture(c)
 }
 
@@ -1103,13 +1122,22 @@ export async function initWorldMaterials(): Promise<void> {
   m.carpet.aoMap = setupTiling(carpetAO, CARPET_PERIOD)
   m.carpet.color.set(0xffffff)
 
-  m.wall.map = setupTiling(makeWallpaper(), WALL_PERIOD, true)
+  m.wall.map = setupTiling(makeWallpaper(), WALL_PERIOD, true) // instant
   // plaster relief kept very low so it reads as old paper, not ruin
   m.wall.normalMap = setupTiling(wallN, WALL_PERIOD)
   m.wall.normalScale.setScalar(0.22)
   m.wall.roughnessMap = setupTiling(wallR, WALL_PERIOD)
   m.wall.roughness = 1.0
   m.wall.color.set(0xffffff)
+  // ...then the hybrid streams in: Daniel's generated base + canon motif
+  void Promise.all([load('wall_mono/color.jpg'), load('wall_mono/rough.jpg')]).then(
+    ([mc, mr]) => {
+      m.wall.map = setupTiling(hybridWallpaper(mc.image as HTMLImageElement), WALL_PERIOD, true)
+      m.wall.roughnessMap = setupTiling(mr, WALL_PERIOD)
+      m.wall.needsUpdate = true
+    },
+    () => undefined, // synthesized wallpaper stays — also fine
+  )
 
   m.ceiling.map = setupTiling(ceilC, CEILING_PERIOD, true)
   m.ceiling.normalMap = setupTiling(ceilN, CEILING_PERIOD)

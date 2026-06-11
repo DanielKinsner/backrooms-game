@@ -83,6 +83,14 @@ this project specifically. No external license applies. Shipped as 1K JPGs;
 | Soaked carpet (flooded zone floor) | `Level0_SoakedCarpetFloodedStretch` | `public/textures/carpet_soaked/` |
 | Damp-decay wallpaper (flooded zone walls) | `Level0_Wallpaper_DampDecay` | `public/textures/wall_decay/` |
 | 2002 painted drywall (office walls) | `Renovation_2002PaintedDrywall` | `public/textures/drywall/` |
+| Mono-yellow wallpaper (hybrid base + roughness) | `Level0_MonoYellowWallpaper` | `public/textures/wall_mono/` |
+
+Not adopted: `Level0_DampCommercialCarpet` (the existing photoscan carpet has
+stronger close-range fiber detail for the most-viewed surface), `Utility_RustedPipeMetal`
+(no pipes in Level 0 yet — reserved for any future Level 2 descent content), and
+`T_Decals_BackroomsWrongness_Atlas` (contains literal text that would hint at an
+undocumented mechanic; the in-engine scrawl system already covers decals).
+The 1K pack (`noclip_backrooms_texture_pack`) overlaps the 2K pack and was superseded by it.
 
 ## Fonts — Google Fonts (SIL OFL 1.1)
 
