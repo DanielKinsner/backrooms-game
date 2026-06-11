@@ -79,6 +79,7 @@ const PHONE_DEAD_FILE = 'audio/phone/deadline.ogg'
 // Water set (processed derivatives — see docs/ASSET-LICENSES.md)
 const DRIP_FILES = ['audio/water/drip1.ogg', 'audio/water/drip2.ogg'] as const
 const SPLASH_FILE = 'audio/water/splash.ogg'
+const WADE_FILE = 'audio/water/wade.ogg' // foley grains a random slice per step
 
 const GLITCH_FILES = [
   'audio/glitch/lowDown.ogg',
@@ -109,6 +110,7 @@ export interface SampleBank {
   phoneDead: AudioBuffer | null
   drips: AudioBuffer[]
   splash: AudioBuffer | null
+  wade: AudioBuffer | null
 }
 
 async function tryLoad(ctx: AudioContext, path: string): Promise<AudioBuffer | null> {
@@ -148,6 +150,7 @@ export async function loadSampleBank(ctx: AudioContext): Promise<SampleBank> {
     phoneDead,
     drips,
     splash,
+    wade,
   ] = await Promise.all([
     loadList(ctx, FOOTSTEP_FILES),
     loadList(ctx, FOOTSTEP_LEATHER_FILES),
@@ -168,6 +171,7 @@ export async function loadSampleBank(ctx: AudioContext): Promise<SampleBank> {
     tryLoad(ctx, PHONE_DEAD_FILE),
     loadList(ctx, DRIP_FILES),
     tryLoad(ctx, SPLASH_FILE),
+    tryLoad(ctx, WADE_FILE),
   ])
 
   return {
@@ -185,6 +189,7 @@ export async function loadSampleBank(ctx: AudioContext): Promise<SampleBank> {
     phoneDead,
     drips,
     splash,
+    wade,
   }
 }
 

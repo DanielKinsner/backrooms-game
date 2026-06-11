@@ -299,6 +299,7 @@ export class AudioEngine {
         phoneDead: null,
         drips: [],
         splash: null,
+        wade: null,
       }
     }
 
@@ -352,6 +353,7 @@ export class AudioEngine {
 
     // Reuse the noise buffer for breath (same low-passed pink-ish character).
     this.foley = new Foley(ctx, this.sfxBus, this.samples.footstepsCloth, noiseBuf)
+    this.foley.wadeBuffer = this.samples.wade
     this.foley.onStep = (sprinting: boolean): void => {
       // Wading kills your loudness debt — the water hears you so the
       // building can't. The stalking presence loses you here (Spec G2).

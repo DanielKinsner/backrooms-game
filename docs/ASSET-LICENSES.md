@@ -60,6 +60,7 @@ are NOT CC0: do not extract them from this repo for reuse elsewhere.
 | Drip A | "Small Drop" (FOUR Editors / Life on Planet Earth) | trim 1.2 s, HP 250 / LP 7k, mono | `public/audio/water/drip1.ogg` |
 | Drip B | "Drop" (FOUR Editors / Life on Planet Earth) | HP 250 / LP 7k, mono | `public/audio/water/drip2.ogg` |
 | Splash, no swimmer | "Stone in Water" (FOUR Editors / Life on Planet Earth) | pitched −14%, LP 4.5k, mono | `public/audio/water/splash.ogg` |
+| Wading bed (foley grains) | "Moving Through Water" (FOUR Editors / Life on Planet Earth) | trim 8 s, pitched −6%, 120 Hz–3.2 kHz band, mono | `public/audio/water/wade.ogg` |
 
 ## Fonts — Google Fonts (SIL OFL 1.1)
 

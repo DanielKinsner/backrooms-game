@@ -47,6 +47,9 @@ export class Foley {
   /** What the player is walking on (zone-driven; engine sets it). */
   surface: Surface = 'carpet'
 
+  /** Sampled wading bed; each water step plays a random grain of it. */
+  wadeBuffer: AudioBuffer | null = null
+
   // --- Breath ---
   private readonly breathGain: GainNode
   private readonly breathFilter: BiquadFilterNode
@@ -188,31 +191,53 @@ export class Foley {
     merger.connect(this.dest)
 
     // Wading overlay (Spec F5): each water step is mostly the water's
-    // sound — a soft churned slosh — with the muffled step underneath.
+    // sound. With the sampled bed loaded, every step is a different
+    // random grain of real water; the synth slosh remains the fallback.
     if (this.surface === 'water') {
-      const w = ctx.createBufferSource()
-      w.buffer = this.noise
-      w.playbackRate.value = 0.8 + Math.random() * 0.25
-      const bp = ctx.createBiquadFilter()
-      bp.type = 'bandpass'
-      bp.Q.value = 0.7
       const t0 = ctx.currentTime
-      bp.frequency.setValueAtTime(620 + Math.random() * 200, t0)
-      bp.frequency.exponentialRampToValueAtTime(240, t0 + 0.28)
       const wg = ctx.createGain()
-      wg.gain.setValueAtTime(0, t0)
-      wg.gain.linearRampToValueAtTime(0.2 * (sprinting ? 1.5 : 1), t0 + 0.03)
-      wg.gain.setTargetAtTime(0, t0 + 0.07, 0.09)
-      w.connect(bp).connect(wg).connect(this.dest)
-      w.start(t0)
-      w.stop(t0 + 0.5)
-      w.onended = (): void => {
-        try {
-          w.disconnect()
-          bp.disconnect()
-          wg.disconnect()
-        } catch {
-          /* torn down */
+      if (this.wadeBuffer) {
+        const w = ctx.createBufferSource()
+        w.buffer = this.wadeBuffer
+        w.playbackRate.value = 0.92 + Math.random() * 0.16
+        const grainLen = 0.32 + Math.random() * 0.14
+        const offset = Math.random() * Math.max(0.01, this.wadeBuffer.duration - grainLen - 0.05)
+        wg.gain.setValueAtTime(0, t0)
+        wg.gain.linearRampToValueAtTime(0.42 * (sprinting ? 1.5 : 1), t0 + 0.04)
+        wg.gain.setTargetAtTime(0, t0 + grainLen * 0.55, 0.09)
+        w.connect(wg).connect(this.dest)
+        w.start(t0, offset, grainLen + 0.2)
+        w.onended = (): void => {
+          try {
+            w.disconnect()
+            wg.disconnect()
+          } catch {
+            /* torn down */
+          }
+        }
+      } else {
+        const w = ctx.createBufferSource()
+        w.buffer = this.noise
+        w.playbackRate.value = 0.8 + Math.random() * 0.25
+        const bp = ctx.createBiquadFilter()
+        bp.type = 'bandpass'
+        bp.Q.value = 0.7
+        bp.frequency.setValueAtTime(620 + Math.random() * 200, t0)
+        bp.frequency.exponentialRampToValueAtTime(240, t0 + 0.28)
+        wg.gain.setValueAtTime(0, t0)
+        wg.gain.linearRampToValueAtTime(0.2 * (sprinting ? 1.5 : 1), t0 + 0.03)
+        wg.gain.setTargetAtTime(0, t0 + 0.07, 0.09)
+        w.connect(bp).connect(wg).connect(this.dest)
+        w.start(t0)
+        w.stop(t0 + 0.5)
+        w.onended = (): void => {
+          try {
+            w.disconnect()
+            bp.disconnect()
+            wg.disconnect()
+          } catch {
+            /* torn down */
+          }
         }
       }
     }
