@@ -1,4 +1,4 @@
-name: Deploy to GitHub Pages
+name: Build (and deploy when Pages is available)
 
 on:
   push:
@@ -32,9 +32,15 @@ jobs:
         with:
           path: ./dist
 
+  # The repo went private (free plan ⇒ Pages disabled), so deploys only run
+  # when triggered by hand — and even then a Pages failure won't go red.
+  # If the repo ever goes public (or Pro) again, run this workflow manually
+  # or drop the `if:` to restore deploy-on-push.
   deploy:
+    if: github.event_name == 'workflow_dispatch'
     needs: build
     runs-on: ubuntu-latest
+    continue-on-error: true
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
