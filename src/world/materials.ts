@@ -982,6 +982,20 @@ export async function initWorldMaterials(): Promise<void> {
       load('carpet_damp/normal.jpg'),
     ])
 
+  // Fixture diffuser (Daniel-generated): grimy ribbed lens + emissive mask.
+  // The dirt sits IN FRONT of the light now — specks read as silhouettes.
+  void Promise.all([load('diffuser/color.jpg'), load('diffuser/emissive.jpg')]).then(
+    ([dc, de]) => {
+      dc.colorSpace = THREE.SRGBColorSpace
+      worldMaterials.fixture.map = dc
+      worldMaterials.fixture.emissiveMap = de
+      worldMaterials.fixture.needsUpdate = true
+    },
+    () => {
+      /* fixture stays a clean emissive panel — fine */
+    },
+  )
+
   const m = worldMaterials
 
   m.carpet.map = setupTiling(recolorCarpet(carpetC.image as HTMLImageElement), CARPET_PERIOD, true)

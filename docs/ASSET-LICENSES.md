@@ -78,6 +78,7 @@ this project specifically. No external license applies. Shipped as 1K JPGs;
 | Set | Source folder | Local path |
 |---|---|---|
 | Stained drop-ceiling tiles | `Level0_DropCeiling_StainedTiles` | `public/textures/ceiling_stained/` |
+| Fluorescent diffuser (color + emissive mask) | `Level0_FluorescentDiffuser_GrimyEmissive` | `public/textures/diffuser/` |
 
 ## Fonts — Google Fonts (SIL OFL 1.1)
 
