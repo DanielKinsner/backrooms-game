@@ -198,8 +198,11 @@ export class DreadBed {
     const hbTarget = this.dread < 0.15 ? 0 : (this.dread - 0.15) / 0.85 * 0.06
     this.hbOut.gain.setTargetAtTime(hbTarget, t, 0.8)
 
-    // BPM scales 60 → 90 across full dread range.
-    this.hbBpm = HEARTBEAT_BASE_BPM + this.dread * (HEARTBEAT_PEAK_BPM - HEARTBEAT_BASE_BPM)
+    // BPM scales 60 → 90 across full dread range — unless D12 has the
+    // beat locked to the player's own gait. That tempo holds.
+    if (!this.cadenceLocked) {
+      this.hbBpm = HEARTBEAT_BASE_BPM + this.dread * (HEARTBEAT_PEAK_BPM - HEARTBEAT_BASE_BPM)
+    }
 
     // Activate scheduling once dread crosses threshold.
     if (this.dread >= 0.15 && !this.hbActive) {
@@ -231,6 +234,23 @@ export class DreadBed {
     this.hbVca.gain.linearRampToValueAtTime(amp, t + attack)
     // exponential to 0 (perceptually natural decay); use setTargetAtTime then snap.
     this.hbVca.gain.setTargetAtTime(0, t + attack, release / 3)
+  }
+
+  // D12 — entrainment break: the heartbeat locks to the player's own
+  // step cadence for `seconds`... and keeps that tempo after they stop.
+  private cadenceLockUntil = 0
+
+  lockToCadence(stepIntervalS: number, seconds = 30): void {
+    const bpm = Math.max(52, Math.min(112, 60 / Math.max(0.3, stepIntervalS)))
+    this.hbBpm = bpm
+    this.cadenceLockUntil = performance.now() + seconds * 1000
+    if (this.hbActive) return
+    this.hbActive = true
+    this.scheduleHeartbeat()
+  }
+
+  get cadenceLocked(): boolean {
+    return performance.now() < this.cadenceLockUntil
   }
 
   /**

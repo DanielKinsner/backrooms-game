@@ -59,6 +59,8 @@ export class PlayerController {
   frozen = false
   /** Seconds of almond-water steadiness left (damps handheld sway). */
   steadyT = 0
+  /** How deep the feet are in standing water (main sets it; 0 = dry). */
+  waterDepth = 0
   /** Dread-driven FOV compression 0..1 (sub-perceptual; ~3.5° at full). */
   dreadNarrow = 0
 
@@ -153,14 +155,19 @@ export class PlayerController {
     if (!this.onGround) return
     _move.set(-Math.sin(this.yaw), 0, -Math.cos(this.yaw))
 
-    _delta.copy(this.position)
-    _delta.y += 1.0
-    _upRay.set(_delta, _move)
-    _upRay.far = RADIUS + 0.65
+    // Probe at chest height first, then knee height — low ledges (pool
+    // basins, sunken floors) sit entirely below the chest ray.
     let nearest: THREE.Intersection | null = null
-    for (const c of colliders) {
-      const hit = _upRay.intersectObject(c, false)[0]
-      if (hit && (!nearest || hit.distance < nearest.distance)) nearest = hit
+    for (const probeY of [1.0, 0.35]) {
+      _delta.copy(this.position)
+      _delta.y += probeY
+      _upRay.set(_delta, _move)
+      _upRay.far = RADIUS + 0.65
+      for (const c of colliders) {
+        const hit = _upRay.intersectObject(c, false)[0]
+        if (hit && (!nearest || hit.distance < nearest.distance)) nearest = hit
+      }
+      if (nearest) break
     }
     if (!nearest) return
 
@@ -237,7 +244,9 @@ export class PlayerController {
     _move.applyAxisAngle(new THREE.Vector3(0, 1, 0), this.yaw)
 
     this.sprinting = input.isDown('ShiftLeft') && !this.crouching && _move.lengthSq() > 0
-    const speed = this.crouching ? CROUCH_SPEED : this.sprinting ? SPRINT_SPEED : WALK_SPEED
+    let speed = this.crouching ? CROUCH_SPEED : this.sprinting ? SPRINT_SPEED : WALK_SPEED
+    // water drags at the ankles; sprinting in it barely helps
+    if (this.waterDepth > 0.05) speed *= THREE.MathUtils.lerp(1, 0.55, Math.min(this.waterDepth / 0.4, 1))
     _move.multiplyScalar(speed)
 
     // Exponential approach to target horizontal velocity.

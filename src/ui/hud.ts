@@ -21,12 +21,20 @@ export class CamcorderHud {
 
   /** Seconds on tape since power-on (06:42:00 AM). */
   tapeTime = 0
+  /** Diegetic date — Tape 2 runs the next day. */
+  tapeDate = 'JUN.12 2002'
   private battery = 0.84
   private glitchT = -1
   private glitchKind = 0
   private stillT = 0
   private watching = false
   private stampLocked = false
+
+  // Spec A — the timestamp breach. Frame-locked, not wall-clock: low-fps
+  // machines still render exactly `breachFrames` frames of it.
+  private breachFrames = 0
+  // Spec D8 — the REC dot stops blinking. Solid. Nothing else changes.
+  private recHoldT = -1
 
   constructor() {
     this.root = document.createElement('div')
@@ -61,24 +69,57 @@ export class CamcorderHud {
   }
 
   private reverseT = -1
+  private reverseRate = 3
 
   /** Impossible artifact: the counter visibly runs BACKWARD for `seconds`
-   *  while gameplay continues forward. Max twice per run, post-meta-beat. */
-  reverseFor(seconds: number): void {
+   *  while gameplay continues forward. Max twice per run, post-meta-beat.
+   *  rate=1 is the SILENCE variant (D9): exact 1× reversal, no overshoot. */
+  reverseFor(seconds: number, rate = 3): void {
     this.reverseT = seconds
+    this.reverseRate = rate
+  }
+
+  /**
+   * Spec A — the breach. For exactly `frames` rendered frames the stamp
+   * shows the player's REAL system date and time, same font, same format.
+   * No sound. No reaction. Nothing acknowledges it, including this comment.
+   */
+  breach(frames = 2): void {
+    this.breachFrames = frames
+  }
+
+  /** D8: the REC dot goes solid for `seconds`. That's all. */
+  holdRecDot(seconds: number): void {
+    this.recHoldT = seconds
+    this.root.querySelector('.hud-dot')!.classList.add('solid')
   }
 
   update(dt: number, dread = 0, moving = true): void {
     if (this.reverseT > 0) {
       this.reverseT -= dt
-      this.tapeTime = Math.max(0, this.tapeTime - dt * 3)
+      this.tapeTime = Math.max(0, this.tapeTime - dt * this.reverseRate)
     } else {
       this.tapeTime += dt
     }
-    // visible drain: the bar loses ~15-20% across a full run and goes low
-    // right around the descent. the battery is the only honest clock left.
-    this.battery = Math.max(0.05, this.battery - dt * 0.00012)
-
+    if (this.recHoldT >= 0) {
+      this.recHoldT -= dt
+      if (this.recHoldT < 0) this.root.querySelector('.hud-dot')!.classList.remove('solid')
+    }
+    if (this.breachFrames > 0) {
+      this.breachFrames--
+      const now = new Date()
+      const MON = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC']
+      const h24 = now.getHours()
+      const ap = h24 < 12 ? 'AM' : 'PM'
+      const h = h24 % 12 === 0 ? 12 : h24 % 12
+      this.dateEl.textContent = `${MON[now.getMonth()]}.${String(now.getDate()).padStart(2, '0')} ${now.getFullYear()}`
+      this.clockEl.textContent = `${ap} ${h}:${String(now.getMinutes()).padStart(2, '0')}:${String(now.getSeconds()).padStart(2, '0')}`
+      this.updateBattery(dt)
+      return
+    }
+    if (this.dateEl.textContent !== this.tapeDate && this.glitchT < 0 && !this.stampLocked) {
+      this.dateEl.textContent = this.tapeDate
+    }
     // stillness watcher: 45 s without meaningful movement and the REC dot
     // switches to a heartbeat double-blink until the player moves again.
     this.stillT = moving ? 0 : this.stillT + dt
@@ -99,13 +140,14 @@ export class CamcorderHud {
         if (this.glitchKind === 0) {
           this.clockEl.textContent = 'AM 0:00:00'
         } else if (this.glitchKind === 1) {
-          this.dateEl.textContent = 'JUN.11 2002'
+          // yesterday's date — and on Tape 2, "yesterday" is Tape 1
+          this.dateEl.textContent = this.tapeDate === 'JUN.13 2002' ? 'JUN.12 2002' : 'JUN.11 2002'
         } else {
           this.dateEl.textContent = 'AUG.04 1987' // before this camera existed
         }
         return // hold the wrong frame; the real stamp resumes next frame
       }
-      this.dateEl.textContent = 'JUN.12 2002'
+      this.dateEl.textContent = this.tapeDate
     }
 
     if (!this.stampLocked) {
@@ -115,6 +157,12 @@ export class CamcorderHud {
       const s = total % 60
       this.clockEl.textContent = `AM ${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
     }
+    this.updateBattery(dt)
+  }
+
+  /** Visible drain: ~15-20% across a run. The only honest clock left. */
+  private updateBattery(dt: number): void {
+    this.battery = Math.max(0.05, this.battery - dt * 0.00012)
     const fill = this.root.querySelector<HTMLElement>('.batt-fill')
     if (fill) fill.style.width = `${Math.round(this.battery * 100)}%`
     this.battEl.textContent = `${Math.round(this.battery * 100)}%`
@@ -144,8 +192,14 @@ export class CamcorderHud {
     this.stampLocked = true
     window.setTimeout(() => {
       this.stampLocked = false
-      this.dateEl.textContent = 'JUN.12 2002'
+      this.dateEl.textContent = this.tapeDate
     }, 1600)
+  }
+
+  /** Tape 2 boot: next-day stamp from the first frame. */
+  setTapeDate(date: string): void {
+    this.tapeDate = date
+    this.dateEl.textContent = date
   }
 }
 

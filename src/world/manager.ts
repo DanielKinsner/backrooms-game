@@ -16,6 +16,11 @@ export class ChunkManager {
   private chunks = new Map<string, BuiltChunk>()
   private salts = new Map<string, number>()
 
+  /** Tape 2 (Spec E): landmarks from run 1 reappear MOVED — about a third
+   *  of the maze re-rolls its interiors. Zones (and the world's bones)
+   *  stay; the details have aged a day. */
+  tape2Variance = false
+
   constructor(scene: THREE.Scene) {
     scene.add(this.group)
   }
@@ -63,7 +68,13 @@ export class ChunkManager {
   private build(cx: number, cz: number): void {
     const k = ChunkManager.key(cx, cz)
     if (this.chunks.has(k)) return
-    const data = generateChunk(cx, cz, this.salts.get(k) ?? 0)
+    let salt = this.salts.get(k) ?? 0
+    if (this.tape2Variance) {
+      // deterministic per-chunk: same chunks moved on every Tape 2 run
+      const h = Math.abs(Math.sin(cx * 374761.393 + cz * 668265.263) * 43758.5453) % 1
+      if (h < 0.34) salt += 9 // far from any director bump
+    }
+    const data = generateChunk(cx, cz, salt)
     const built = buildChunkMeshes(data)
     this.group.add(built.group)
     this.chunks.set(k, built)
@@ -86,6 +97,23 @@ export class ChunkManager {
   bumpSalt(cx: number, cz: number): void {
     const k = ChunkManager.key(cx, cz)
     this.salts.set(k, (this.salts.get(k) ?? 0) + 1)
+  }
+
+  /**
+   * Tape 2's signature beat — the ONLY in-view re-stitch in the game.
+   * Re-rolls a RESIDENT chunk immediately: a corridor becomes a wall while
+   * half-seen at the frustum edge. Scripted, once, never emergent.
+   */
+  rebuildNow(cx: number, cz: number): void {
+    this.bumpSalt(cx, cz)
+    const k = ChunkManager.key(cx, cz)
+    const c = this.chunks.get(k)
+    if (c) {
+      this.group.remove(c.group)
+      c.dispose()
+      this.chunks.delete(k)
+    }
+    this.build(cx, cz)
   }
 
   /** Zone of the chunk under a world position (audio: damp = drips). */

@@ -1,5 +1,6 @@
 import * as THREE from 'three'
 import { manilaMaterial } from '../world/materials'
+import { MANILA_NOTE_TAPE2 } from './notes'
 import type { PlayerController } from '../player/controller'
 import type { InteractSystem, NoteOverlay } from '../player/interact'
 import type { AudioEngine } from '../audio/engine'
@@ -46,11 +47,22 @@ interface Ctx {
   director: Director
   post: PostStack
   colliders: THREE.Mesh[] // narrative's collider list (shared with main)
+  /**
+   * Tape 2 (Spec E, as corrected by the lore addendum): the room's defining
+   * property is that it can never be found again. So Tape 2's betrayal is —
+   * it is found again. Same dimensions. The thermos exactly as you left it.
+   * One new note. Nothing else changes. Restraint is the room's identity.
+   */
+  tape2?: { thermosDrunk: boolean }
 }
 
 export class ManilaRoom {
   placed = false
   gone = false
+  /** Persistence outputs (Tape 1 writes these into the run summary). */
+  thermosDrunkThisRun = false
+  sleptHere = false
+  private insideT = 0
 
   private group: THREE.Group | null = null
   private myColliders: THREE.Mesh[] = []
@@ -104,12 +116,15 @@ export class ManilaRoom {
     mk(0.07, 0.7, 0.07, 0.45, 0.35, -0.7)
     mk(0.07, 0.7, 0.07, 1.35, 0.35, -1.1)
     void table
+    // Tape 2: the thermos is exactly where you left it. If you drank it
+    // yesterday, it is gone. The room kept your receipt.
+    const thermosExists = !this.ctx.tape2 || !this.ctx.tape2.thermosDrunk
     const thermos = new THREE.Mesh(
       new THREE.CylinderGeometry(0.055, 0.06, 0.3, 12),
       new THREE.MeshStandardMaterial({ color: 0x8b9094, roughness: 0.35, metalness: 0.4 }),
     )
     thermos.position.set(0.75, 0.9, -0.95)
-    group.add(thermos)
+    if (thermosExists) group.add(thermos)
 
     const note = new THREE.Mesh(
       new THREE.PlaneGeometry(0.21, 0.297),
@@ -119,6 +134,25 @@ export class ManilaRoom {
     note.rotation.z = 0.4
     note.position.set(1.1, 0.756, -0.85)
     group.add(note)
+
+    // Tape 2's one addition: a second note, same handwriting, that denies
+    // its own existence. Nothing else. Do NOT escalate in here.
+    if (this.ctx.tape2) {
+      const note2 = new THREE.Mesh(
+        new THREE.PlaneGeometry(0.21, 0.297),
+        new THREE.MeshStandardMaterial({ color: 0xddd2ac, roughness: 0.9, side: THREE.DoubleSide }),
+      )
+      note2.rotation.x = -Math.PI / 2
+      note2.rotation.z = -0.25
+      note2.position.set(0.62, 0.756, -0.78)
+      group.add(note2)
+      interact.add({
+        object: note2,
+        label: 'READ',
+        once: false,
+        onUse: () => notesOverlay.show(MANILA_NOTE_TAPE2),
+      })
+    }
 
     scene.add(group)
 
@@ -142,19 +176,24 @@ export class ManilaRoom {
       onUse: () => notesOverlay.show(MANILA_NOTE),
     })
     let drunk = false
-    interact.add({
-      object: thermos,
-      label: 'DRINK',
-      onUse: () => {
-        if (drunk) return
-        drunk = true
-        group.remove(thermos)
-        notesOverlay.show('still warm.')
-        audio.playSwallow()
-        director.relief(0.3)
-        this.ctx.player.steadyT = 70
-      },
-    })
+    if (thermosExists) {
+      interact.add({
+        object: thermos,
+        label: 'DRINK',
+        onUse: () => {
+          if (drunk) return
+          drunk = true
+          this.thermosDrunkThisRun = true
+          group.remove(thermos)
+          // Tape 2: it has been sitting here since yesterday. It has not
+          // cooled. Do not explain this to the player.
+          notesOverlay.show('still warm.')
+          audio.playSwallow()
+          director.relief(0.3)
+          this.ctx.player.steadyT = 70
+        },
+      })
+    }
   }
 
   update(dt: number): void {
@@ -186,6 +225,8 @@ export class ManilaRoom {
 
     if (this.inside) {
       director.relief(dt * 0.01) // dread drains while you rest
+      this.insideT += dt
+      if (this.insideT > 60) this.sleptHere = true
     }
 
     // once well behind the player, the room stops existing — forever

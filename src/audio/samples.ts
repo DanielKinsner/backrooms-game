@@ -31,6 +31,9 @@ const AMBIENT_FILES = {
   atmos2: 'audio/ambient/atmoseerie02.flac',
   atmos3: 'audio/ambient/atmoseerie03.flac',
   atmos4: 'audio/ambient/atmoseerie04.flac',
+  // TAPE 2: two processed drones widen the rotation (anti-habituation)
+  atmos5: 'audio/ambient/drone_subtle.ogg',
+  atmos6: 'audio/ambient/drone_muffled.ogg',
 } as const
 
 const IMPACT_FILES = [
@@ -44,6 +47,10 @@ const IMPACT_FILES = [
   'audio/impacts/impactWood_heavy_000.ogg',
   'audio/impacts/impactWood_heavy_001.ogg',
   'audio/impacts/impactWood_heavy_002.ogg',
+  // TAPE 2: long-tailed echo hits — the building is larger than it should be
+  'audio/impacts/echo_bottle.ogg',
+  'audio/impacts/echo_silo.ogg',
+  'audio/impacts/echo_dungeon.ogg',
 ] as const
 
 const DOOR_OPEN_FILES = [
@@ -72,6 +79,19 @@ const DOOR_CLOSE_FILES = [
 
 const CREAK_FILE = 'audio/doors/creaky_door_hinge.wav'
 
+// 2002 desk phone (processed derivatives — see docs/ASSET-LICENSES.md)
+const PHONE_CLICK_FILE = 'audio/phone/click.ogg'
+const PHONE_DEAD_FILE = 'audio/phone/deadline.ogg'
+
+// Water set (processed derivatives — see docs/ASSET-LICENSES.md)
+const DRIP_FILES = ['audio/water/drip1.ogg', 'audio/water/drip2.ogg'] as const
+const SPLASH_FILE = 'audio/water/splash.ogg'
+const WADE_FILE = 'audio/water/wade.ogg' // foley grains a random slice per step
+
+// Camcorder transport buttons (processed vintage-camera clicks)
+const PAUSE_DOWN_FILE = 'audio/ui/pause_down.ogg'
+const PAUSE_UP_FILE = 'audio/ui/pause_up.ogg'
+
 const GLITCH_FILES = [
   'audio/glitch/lowDown.ogg',
   'audio/glitch/lowRandom.ogg',
@@ -97,6 +117,13 @@ export interface SampleBank {
   doorCloses: AudioBuffer[]
   creak: AudioBuffer | null
   glitches: AudioBuffer[]
+  phoneClick: AudioBuffer | null
+  phoneDead: AudioBuffer | null
+  drips: AudioBuffer[]
+  splash: AudioBuffer | null
+  wade: AudioBuffer | null
+  pauseDown: AudioBuffer | null
+  pauseUp: AudioBuffer | null
 }
 
 async function tryLoad(ctx: AudioContext, path: string): Promise<AudioBuffer | null> {
@@ -132,6 +159,13 @@ export async function loadSampleBank(ctx: AudioContext): Promise<SampleBank> {
     doorCloses,
     creak,
     glitches,
+    phoneClick,
+    phoneDead,
+    drips,
+    splash,
+    wade,
+    pauseDown,
+    pauseUp,
   ] = await Promise.all([
     loadList(ctx, FOOTSTEP_FILES),
     loadList(ctx, FOOTSTEP_LEATHER_FILES),
@@ -142,12 +176,21 @@ export async function loadSampleBank(ctx: AudioContext): Promise<SampleBank> {
       AMBIENT_FILES.atmos2,
       AMBIENT_FILES.atmos3,
       AMBIENT_FILES.atmos4,
+      AMBIENT_FILES.atmos5,
+      AMBIENT_FILES.atmos6,
     ]),
     loadList(ctx, IMPACT_FILES),
     loadList(ctx, DOOR_OPEN_FILES),
     loadList(ctx, DOOR_CLOSE_FILES),
     tryLoad(ctx, CREAK_FILE),
     loadList(ctx, GLITCH_FILES),
+    tryLoad(ctx, PHONE_CLICK_FILE),
+    tryLoad(ctx, PHONE_DEAD_FILE),
+    loadList(ctx, DRIP_FILES),
+    tryLoad(ctx, SPLASH_FILE),
+    tryLoad(ctx, WADE_FILE),
+    tryLoad(ctx, PAUSE_DOWN_FILE),
+    tryLoad(ctx, PAUSE_UP_FILE),
   ])
 
   return {
@@ -161,6 +204,13 @@ export async function loadSampleBank(ctx: AudioContext): Promise<SampleBank> {
     doorCloses,
     creak,
     glitches,
+    phoneClick,
+    phoneDead,
+    drips,
+    splash,
+    wade,
+    pauseDown,
+    pauseUp,
   }
 }
 

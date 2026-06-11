@@ -1,5 +1,71 @@
 # Worklog
 
+## 2026-06-10 — sessions 5–6 (branch `tape-2`: owner assets)
+
+Twelve small commits. Audio: owner-licensed packs integrated as processed
+OGG derivatives (phone receiver set, real drips + the splash, granular
+wading, two atmos drones, three echo hits, mechanical pause button) —
+synth fallbacks kept everywhere. Textures: Daniel's self-generated
+`NOCLIP_Backrooms_TexturePack_2K_UE5` adopted for the stained ceiling,
+fixture diffuser (+emissive mask), garage concrete, flooded-zone floor
+and walls, office drywall, and a hybrid wallpaper (generated base, canon
+arrow motif drawn on top — the motif is gameplay-load-bearing). Not
+adopted: generated carpet (photoscan keeps better close-range fiber),
+rusted pipe metal (reserved for Level 2), decal atlas (text hints at the
+Q-pause — banned by Spec C). Verified: tsc + prod build clean, all 10
+audio buffers decode, all three re-skinned zones stream textured
+materials, fixture map+emissiveMap live, playbot soak clean, 180 fps.
+
+## 2026-06-10 — session 4 (branch `tape-2`: the EXPANSION.md build)
+
+> ⚠️ SPOILERS BELOW — this entry stays systems-level on purpose.
+> The spec itself (docs/EXPANSION.md) and the source are the spoiler zone.
+
+Implemented EXPANSION.md specs A–H plus the lore-alignment addendum, on
+top of the existing systems (director, chunk assembler, audio engine,
+VHS pipeline) — no parallel systems built. Highlights, vaguely:
+
+- **A** — one frame-locked HUD event, once per run, hidden inside an
+  existing artifact class. 2 rendered frames, never acknowledged.
+- **B** — director v2: a rolling behavioral profiler (`director/profile.ts`)
+  with an exploit table. Exploits *replace* scheduled wrongness slots
+  (density unchanged) and re-allocate — never add — entity beats.
+- **C** — the held-Q mechanic now has a reason to be the most discussed
+  mechanic in the game. Zero tutorialization. Discovery only.
+- **D** — wrongness deck grew by ~12 cards (audio, light, shader-level,
+  HUD, and prop cards). Two cards are gaze-contingent shader effects on
+  the carpet/wallpaper materials. Skipped: D6 (shrink drift — fights the
+  chunk assembler), D11 (the photograph — needs per-module authoring).
+- **E** — TAPE 2 / NG+: run summary persisted to localStorage on
+  completion; a second tape appears on the menu shelf. Next-day stamp,
+  seeded director profile, conditional note set, ~1/3 of the maze
+  re-rolled, one scripted frustum-edge beat (the game's only one), the
+  Manila Room beat per the addendum's correction, ending bleed.
+- **F** — audio escalations: slow-notch silence variant, per-zone reverb
+  crossfade, formant sweeps on the hum bus, one very close one-shot,
+  honest surface foley (wading layer; water swallows loudness debt).
+- **G** — two new Level-0 zone recipes in the streamer: a 2002 office
+  island (cubicle pods, dead CRTs, exactly one not dead — the only screen
+  light in the game) and a flooded stretch (ankle-deep, drag physics,
+  silence-debt rules, one submerged page readable only via zoom).
+- **H** — microphone opt-in on the title screen, off by default,
+  analysis-only (graph terminates at an AnalyserNode; nothing recorded or
+  sent). Only modulates existing systems; can never trigger a beat.
+- Lore eggs 1–4 from the addendum, all diegetic, none narrated.
+- **Fix:** mantle now probes knee height too — you can climb out of the
+  pool basins (reported: "fell into a pool, couldn't climb out").
+
+### Validated (headless, dev server)
+- `tsc --noEmit` clean; prod build clean (after local `npm i`; lockfile
+  drift reverted — CI's pinned lockfile untouched)
+- Pool basin escape: bot fell in (y −0.7), climbed out in 2.8 s
+- Zone census over 81×81 chunks: office ~3%, flooded ~3.5%, wings unchanged
+- Office: 6 chunks resident → 24 CRTs, 4 powered; flooded: waterDepth 0.11
+- 28 forced deck draws at dread 0.7 + playbot soak: zero errors
+- Tape 2 boot: shelf renders, next-day stamp, world variance on, profile
+  seeded from persisted run from minute zero; storage-corrupt path falls
+  back to Tape 1 behavior
+
 ## 2026-06-10 — build sessions 1–2 (research → live deploy)
 
 **LIVE: https://danielkinsner.github.io/backrooms-game/**

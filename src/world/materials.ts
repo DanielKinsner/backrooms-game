@@ -635,6 +635,169 @@ export const manilaMaterial = new THREE.MeshStandardMaterial({
   roughness: 0.82,
 })
 
+// ---------------------------------------------------------------------------
+// TAPE 2 expansion materials
+// ---------------------------------------------------------------------------
+
+/** Office Pocket (G1): 2002 cubicle island. Fabric, laminate, beige plastic. */
+export const officeMaterials = {
+  partition: new THREE.MeshStandardMaterial({ color: 0x6e7077, roughness: 0.98 }),
+  partitionTrim: new THREE.MeshStandardMaterial({ color: 0x9a958a, roughness: 0.6 }),
+  laminate: new THREE.MeshStandardMaterial({ color: 0xb9ad94, roughness: 0.55 }),
+  crtShell: new THREE.MeshStandardMaterial({ color: 0xc9c2ae, roughness: 0.65 }),
+  /** Dead screen: dark green-grey glass. It reflects you, barely. */
+  crtDead: new THREE.MeshStandardMaterial({ color: 0x1c211e, roughness: 0.18, metalness: 0.1 }),
+  carpetTiles: new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.96 }),
+  /** Daniel-generated: the renovation's drywall. 2002 never left here. */
+  drywall: new THREE.MeshStandardMaterial({ color: 0xc4baa0, roughness: 0.9 }),
+}
+
+/** Flooded zone (G2): the water is shallow, dark, and very patient. */
+export const floodWaterMaterial = new THREE.MeshStandardMaterial({
+  color: 0x3a3d2e,
+  roughness: 0.07,
+  metalness: 0.0,
+  transparent: true,
+  opacity: 0.62,
+})
+
+/** Flooded zone surfaces (Daniel-generated): soaked carpet under the
+ *  water, water-run decayed wallpaper above it. Lazy + async. */
+export const floodedMaterials = {
+  floor: new THREE.MeshStandardMaterial({ color: 0x5c5538, roughness: 0.55 }),
+  wall: new THREE.MeshStandardMaterial({ color: 0x9d8d54, roughness: 0.95 }),
+}
+
+let floodedInitialized = false
+export function initFloodedMaterials(): void {
+  if (floodedInitialized) return
+  floodedInitialized = true
+  const loader = new THREE.TextureLoader()
+  const base = import.meta.env.BASE_URL
+  const wire = async (
+    mat: THREE.MeshStandardMaterial,
+    dir: string,
+    period: number,
+    normalScale: number,
+  ): Promise<void> => {
+    const [c, n, r] = await Promise.all([
+      loader.loadAsync(`${base}textures/${dir}/color.jpg`),
+      loader.loadAsync(`${base}textures/${dir}/normal.jpg`),
+      loader.loadAsync(`${base}textures/${dir}/rough.jpg`),
+    ])
+    mat.map = setupTiling(c, period, true)
+    mat.normalMap = setupTiling(n, period)
+    mat.normalScale.setScalar(normalScale)
+    mat.roughnessMap = setupTiling(r, period)
+    mat.color.set(0xffffff)
+    mat.needsUpdate = true
+  }
+  void wire(floodedMaterials.floor, 'carpet_soaked', 1.6, 0.8).catch(() => undefined)
+  void wire(floodedMaterials.wall, 'wall_decay', 2.4, 0.5).catch(() => undefined)
+}
+
+/** The one powered CRT in the office: animated static. The only screen
+ *  light in the game. Basic (unlit) — a screen IS a light. */
+let crtStaticMat: THREE.MeshBasicMaterial | null = null
+let crtStaticCanvas: HTMLCanvasElement | null = null
+let crtStaticTex: THREE.CanvasTexture | null = null
+let crtStaticLast = 0
+export function getCrtStaticMaterial(): THREE.MeshBasicMaterial {
+  if (crtStaticMat) return crtStaticMat
+  crtStaticCanvas = document.createElement('canvas')
+  crtStaticCanvas.width = crtStaticCanvas.height = 64
+  drawCrtStatic()
+  crtStaticTex = new THREE.CanvasTexture(crtStaticCanvas)
+  crtStaticTex.magFilter = THREE.NearestFilter
+  crtStaticMat = new THREE.MeshBasicMaterial({ map: crtStaticTex, fog: false })
+  return crtStaticMat
+}
+
+function drawCrtStatic(): void {
+  if (!crtStaticCanvas) return
+  const ctx = crtStaticCanvas.getContext('2d')!
+  const img = ctx.createImageData(64, 64)
+  for (let i = 0; i < img.data.length; i += 4) {
+    const v = 30 + Math.random() * 170
+    img.data[i] = v * 0.82
+    img.data[i + 1] = v
+    img.data[i + 2] = v * 0.9
+    img.data[i + 3] = 255
+  }
+  // a rolling dark band, like the refresh fighting the tape
+  const band = Math.floor((performance.now() * 0.02) % 64)
+  for (let y = band; y < Math.min(64, band + 7); y++) {
+    for (let x = 0; x < 64; x++) {
+      const k = (y * 64 + x) * 4
+      img.data[k] *= 0.45
+      img.data[k + 1] *= 0.45
+      img.data[k + 2] *= 0.45
+    }
+  }
+  ctx.putImageData(img, 0, 0)
+}
+
+/** Call from the frame loop; redraws at ~12.5 Hz (CRTs are not smooth). */
+export function updateCrtStatic(timeMs: number): void {
+  if (!crtStaticTex || timeMs - crtStaticLast < 80) return
+  crtStaticLast = timeMs
+  drawCrtStatic()
+  crtStaticTex.needsUpdate = true
+}
+
+/**
+ * Lore egg 2 — "the arrows agree". A single chevron matching the wallpaper
+ * motif, same ink, same weight. The horror is only in which way it points.
+ */
+let chevronMat: THREE.MeshStandardMaterial | null = null
+export function getChevronMaterial(): THREE.MeshStandardMaterial {
+  if (chevronMat) return chevronMat
+  const S = 128
+  const c = document.createElement('canvas')
+  c.width = c.height = S
+  const ctx = c.getContext('2d')!
+  ctx.strokeStyle = 'rgba(122, 106, 52, 0.62)'
+  ctx.lineWidth = 7
+  ctx.lineCap = 'round'
+  ctx.beginPath()
+  ctx.moveTo(38, 44)
+  ctx.lineTo(64, 78)
+  ctx.lineTo(90, 44)
+  ctx.stroke()
+  const tex = new THREE.CanvasTexture(c)
+  tex.colorSpace = THREE.SRGBColorSpace
+  chevronMat = new THREE.MeshStandardMaterial({
+    map: tex,
+    transparent: true,
+    depthWrite: false,
+    roughness: 1,
+    polygonOffset: true,
+    polygonOffsetFactor: -1,
+  })
+  return chevronMat
+}
+
+/**
+ * D10 — carpet flow. The pattern advects at ~1 cm/s, but only in
+ * peripheral vision: the velocity is masked to zero at the center of the
+ * frame. Gaze-contingent via gl_FragCoord; subtle enough to be deniable.
+ */
+export const carpetFlowUniforms = {
+  uFlowAmt: { value: 0 },
+  uFlowTime: { value: 0 },
+  uFlowRes: { value: new THREE.Vector2(1920, 1080) },
+}
+
+/**
+ * D7 — seam drift. Wallpaper seam alignment degrades along a corridor
+ * (per-segment hash offset, ramped by distance from the event center),
+ * then snaps back to perfect at the next junction.
+ */
+export const seamDriftUniforms = {
+  uSeamAmt: { value: 0 },
+  uSeamCenter: { value: new THREE.Vector2(0, 0) },
+}
+
 /** Column stencil. Every column says LEVEL 3. Every single one. */
 let stencilMat: THREE.MeshStandardMaterial | null = null
 export function getStencilMaterial(): THREE.MeshStandardMaterial {
@@ -660,6 +823,69 @@ export function getStencilMaterial(): THREE.MeshStandardMaterial {
   return stencilMat
 }
 
+/** 2002 office carpet tiles: 50 cm grid, grey-blue, coffee ghosts. */
+function makeOfficeCarpetTexture(): THREE.CanvasTexture {
+  const S = 512 // 2 m world period → 4 tiles
+  const c = document.createElement('canvas')
+  c.width = c.height = S
+  const ctx = c.getContext('2d')!
+  const rnd = seededRnd(2002)
+  const T = 128
+  for (let y = 0; y < S; y += T) {
+    for (let x = 0; x < S; x += T) {
+      const v = 78 + Math.floor(rnd() * 14)
+      ctx.fillStyle = `rgb(${v - 6}, ${v}, ${v + 10})`
+      ctx.fillRect(x, y, T, T)
+      // tile direction alternates — the checker sheen of cheap carpet tile
+      ctx.globalAlpha = 0.12
+      ctx.fillStyle = (x / T + y / T) % 2 === 0 ? '#ffffff' : '#000000'
+      ctx.fillRect(x, y, T, T)
+      ctx.globalAlpha = 1
+      ctx.strokeStyle = 'rgba(20, 22, 28, 0.45)'
+      ctx.strokeRect(x + 0.5, y + 0.5, T - 1, T - 1)
+    }
+  }
+  // fiber noise + old coffee
+  for (let i = 0; i < 2400; i++) {
+    const v = 60 + Math.floor(rnd() * 60)
+    ctx.fillStyle = `rgba(${v}, ${v + 4}, ${v + 12}, 0.18)`
+    ctx.fillRect(rnd() * S, rnd() * S, 1 + rnd() * 2, 1 + rnd() * 2)
+  }
+  ctx.globalCompositeOperation = 'multiply'
+  stainPass(ctx, S, 4, 'rgba(96, 80, 52, 0.30)')
+  return new THREE.CanvasTexture(c)
+}
+
+let officeInitialized = false
+/** Lazy, like the wings: only pay if an office streams in. */
+export function initOfficeMaterials(): void {
+  if (officeInitialized) return
+  officeInitialized = true
+  const tex = makeOfficeCarpetTexture()
+  setupTiling(tex, 2.0, true)
+  officeMaterials.carpetTiles.map = tex
+  officeMaterials.carpetTiles.needsUpdate = true
+  // generated drywall streams in over the flat-color placeholder
+  const loader = new THREE.TextureLoader()
+  const base = import.meta.env.BASE_URL
+  void Promise.all([
+    loader.loadAsync(`${base}textures/drywall/color.jpg`),
+    loader.loadAsync(`${base}textures/drywall/normal.jpg`),
+    loader.loadAsync(`${base}textures/drywall/rough.jpg`),
+  ]).then(
+    ([c, n, r]) => {
+      const m = officeMaterials.drywall
+      m.map = setupTiling(c, 2.4, true)
+      m.normalMap = setupTiling(n, 2.4)
+      m.normalScale.setScalar(0.45)
+      m.roughnessMap = setupTiling(r, 2.4)
+      m.color.set(0xd9d2bc) // a shade of "we just painted this" gone stale
+      m.needsUpdate = true
+    },
+    () => undefined,
+  )
+}
+
 let wingsInitialized = false
 /** Lazy: only pay the canvas cost if a wing actually streams in. */
 export function initWingMaterials(): void {
@@ -674,6 +900,7 @@ export function initWingMaterials(): void {
   const carnTex = makeCarnivalTexture()
   setupTiling(carnTex, 2.0, true)
   wingMaterials.carnival.map = carnTex
+  // canvas concrete goes up instantly; the generated set swaps in async
   const concTex = makeConcreteTexture(true)
   setupTiling(concTex, 3.2, true)
   wingMaterials.concrete.map = concTex
@@ -688,11 +915,52 @@ export function initWingMaterials(): void {
     wingMaterials.concretePlain,
   ])
     m.needsUpdate = true
+  void upgradeConcrete()
+}
+
+/** Daniel-generated damp concrete replaces the flat canvas version.
+ *  The floor variant keeps its faded parking-bay line, painted over the
+ *  generated albedo so the garage stays a garage. */
+async function upgradeConcrete(): Promise<void> {
+  const loader = new THREE.TextureLoader()
+  const base = import.meta.env.BASE_URL
+  try {
+    const [c, n, r, ao] = await Promise.all([
+      loader.loadAsync(`${base}textures/concrete_damp/color.jpg`),
+      loader.loadAsync(`${base}textures/concrete_damp/normal.jpg`),
+      loader.loadAsync(`${base}textures/concrete_damp/rough.jpg`),
+      loader.loadAsync(`${base}textures/concrete_damp/ao.jpg`),
+    ])
+    // floor: bay line painted onto the albedo
+    const img = c.image as HTMLImageElement
+    const cv = document.createElement('canvas')
+    cv.width = img.width
+    cv.height = img.height
+    const ctx = cv.getContext('2d')!
+    ctx.drawImage(img, 0, 0)
+    ctx.globalAlpha = 0.4
+    ctx.fillStyle = '#b8a23a'
+    ctx.fillRect(0, Math.floor(cv.height * 0.48), cv.width, Math.max(6, cv.height * 0.027))
+    const floorTex = new THREE.CanvasTexture(cv)
+    for (const [mat, map] of [
+      [wingMaterials.concrete, floorTex],
+      [wingMaterials.concretePlain, c],
+    ] as const) {
+      mat.map = setupTiling(map, 3.2, true)
+      mat.normalMap = setupTiling(n, 3.2)
+      mat.normalScale.setScalar(0.7)
+      mat.roughnessMap = setupTiling(r, 3.2)
+      mat.aoMap = setupTiling(ao, 3.2)
+      mat.needsUpdate = true
+    }
+  } catch {
+    /* canvas concrete stays — fine */
+  }
 }
 
 const CARPET_PERIOD = 1.2
 const WALL_PERIOD = 2.4
-const CEILING_PERIOD = 3.6
+const CEILING_PERIOD = 2.4 // stained set carries 2x2 panels → 1.2 m tiles
 
 function setupTiling(tex: THREE.Texture, period: number, srgb = false): THREE.Texture {
   tex.wrapS = tex.wrapT = THREE.RepeatWrapping
@@ -737,14 +1005,27 @@ function makeWallpaper(): THREE.CanvasTexture {
     ctx.fillRect(x, 0, w, S)
   }
 
-  // stripe pairs every 1.2 m (512 px), thin darker lines with arrow motif between
-  ctx.fillStyle = 'rgba(122, 106, 52, 0.55)'
-  for (const gx of [128, 640]) {
+  drawWallpaperMotif(ctx, S, 0.55)
+
+  // age: blotchy stains (multiply, wrap-safe) — present but not black-mold
+  ctx.globalCompositeOperation = 'multiply'
+  stainPass(ctx, S, 7, 'rgba(150, 134, 76, 0.22)')
+  stainPass(ctx, S, 4, 'rgba(110, 96, 52, 0.16)')
+  return new THREE.CanvasTexture(c)
+}
+
+/** The canon stripe pairs + arrow motif (notes: "DON'T trust the arrows";
+ *  the arrows-agree card swaps these). Load-bearing — every wallpaper
+ *  variant must carry it. */
+function drawWallpaperMotif(ctx: CanvasRenderingContext2D, S: number, alpha: number): void {
+  ctx.save()
+  ctx.globalCompositeOperation = 'source-over'
+  ctx.fillStyle = `rgba(122, 106, 52, ${alpha})`
+  for (const gx of [S / 8, (S * 5) / 8]) {
     ctx.fillRect(gx - 14, 0, 5, S)
     ctx.fillRect(gx + 9, 0, 5, S)
     // small arrow/chevron glyphs running down the gap
-    ctx.save()
-    ctx.strokeStyle = 'rgba(122, 106, 52, 0.5)'
+    ctx.strokeStyle = `rgba(122, 106, 52, ${alpha * 0.9})`
     ctx.lineWidth = 2.5
     for (let y = 24; y < S; y += 64) {
       ctx.beginPath()
@@ -753,13 +1034,19 @@ function makeWallpaper(): THREE.CanvasTexture {
       ctx.lineTo(gx + 5, y)
       ctx.stroke()
     }
-    ctx.restore()
   }
+  ctx.restore()
+}
 
-  // age: blotchy stains (multiply, wrap-safe) — present but not black-mold
-  ctx.globalCompositeOperation = 'multiply'
-  stainPass(ctx, S, 7, 'rgba(150, 134, 76, 0.22)')
-  stainPass(ctx, S, 4, 'rgba(110, 96, 52, 0.16)')
+/** Hybrid wallpaper: Daniel's generated mono-yellow base with the canon
+ *  motif drawn over it. Best of both — his grain, the maze's lie. */
+function hybridWallpaper(img: HTMLImageElement): THREE.CanvasTexture {
+  const S = 1024
+  const c = document.createElement('canvas')
+  c.width = c.height = S
+  const ctx = c.getContext('2d')!
+  ctx.drawImage(img, 0, 0, S, S)
+  drawWallpaperMotif(ctx, S, 0.4)
   return new THREE.CanvasTexture(c)
 }
 
@@ -801,13 +1088,30 @@ export async function initWorldMaterials(): Promise<void> {
       load('carpet/ao.jpg'),
       load('wall/normal.jpg'),
       load('wall/rough.jpg'),
-      load('ceiling/color.jpg'),
-      load('ceiling/normal.jpg'),
-      load('ceiling/rough.jpg'),
-      load('ceiling/ao.jpg'),
+      // TAPE 2: Daniel's generated stained drop-tile set replaces the
+      // clean OfficeCeiling001 — the stains were tinted on in-shader
+      // before; now they're real and they don't repeat with the grime.
+      load('ceiling_stained/color.jpg'),
+      load('ceiling_stained/normal.jpg'),
+      load('ceiling_stained/rough.jpg'),
+      load('ceiling_stained/ao.jpg'),
       load('carpet_damp/color.jpg'),
       load('carpet_damp/normal.jpg'),
     ])
+
+  // Fixture diffuser (Daniel-generated): grimy ribbed lens + emissive mask.
+  // The dirt sits IN FRONT of the light now — specks read as silhouettes.
+  void Promise.all([load('diffuser/color.jpg'), load('diffuser/emissive.jpg')]).then(
+    ([dc, de]) => {
+      dc.colorSpace = THREE.SRGBColorSpace
+      worldMaterials.fixture.map = dc
+      worldMaterials.fixture.emissiveMap = de
+      worldMaterials.fixture.needsUpdate = true
+    },
+    () => {
+      /* fixture stays a clean emissive panel — fine */
+    },
+  )
 
   const m = worldMaterials
 
@@ -818,20 +1122,29 @@ export async function initWorldMaterials(): Promise<void> {
   m.carpet.aoMap = setupTiling(carpetAO, CARPET_PERIOD)
   m.carpet.color.set(0xffffff)
 
-  m.wall.map = setupTiling(makeWallpaper(), WALL_PERIOD, true)
+  m.wall.map = setupTiling(makeWallpaper(), WALL_PERIOD, true) // instant
   // plaster relief kept very low so it reads as old paper, not ruin
   m.wall.normalMap = setupTiling(wallN, WALL_PERIOD)
   m.wall.normalScale.setScalar(0.22)
   m.wall.roughnessMap = setupTiling(wallR, WALL_PERIOD)
   m.wall.roughness = 1.0
   m.wall.color.set(0xffffff)
+  // ...then the hybrid streams in: Daniel's generated base + canon motif
+  void Promise.all([load('wall_mono/color.jpg'), load('wall_mono/rough.jpg')]).then(
+    ([mc, mr]) => {
+      m.wall.map = setupTiling(hybridWallpaper(mc.image as HTMLImageElement), WALL_PERIOD, true)
+      m.wall.roughnessMap = setupTiling(mr, WALL_PERIOD)
+      m.wall.needsUpdate = true
+    },
+    () => undefined, // synthesized wallpaper stays — also fine
+  )
 
   m.ceiling.map = setupTiling(ceilC, CEILING_PERIOD, true)
   m.ceiling.normalMap = setupTiling(ceilN, CEILING_PERIOD)
   m.ceiling.normalScale.setScalar(0.7)
   m.ceiling.roughnessMap = setupTiling(ceilR, CEILING_PERIOD)
   m.ceiling.aoMap = setupTiling(ceilAO, CEILING_PERIOD)
-  m.ceiling.color.set(0xcfc4a2) // grime tint over the clean white tiles
+  m.ceiling.color.set(0xe6e0c8) // light tint only — the stains are baked in now
 
   m.carpetDamp.map = setupTiling(dampC, 1.6, true)
   m.carpetDamp.normalMap = setupTiling(dampN, 1.6)
@@ -842,19 +1155,66 @@ export async function initWorldMaterials(): Promise<void> {
   // geometry is baked in world space (identity transforms), so `transformed`
   // IS the world position — cheapest possible contact-occlusion fake.
   m.wall.onBeforeCompile = (shader) => {
+    shader.uniforms.uSeamAmt = seamDriftUniforms.uSeamAmt
+    shader.uniforms.uSeamCenter = seamDriftUniforms.uSeamCenter
     shader.vertexShader = shader.vertexShader
-      .replace('#include <common>', '#include <common>\nvarying float vGrimeY;')
-      .replace('#include <begin_vertex>', '#include <begin_vertex>\n  vGrimeY = transformed.y;')
+      .replace('#include <common>', '#include <common>\nvarying float vGrimeY;\nvarying vec2 vWorldXZ;')
+      .replace(
+        '#include <begin_vertex>',
+        '#include <begin_vertex>\n  vGrimeY = transformed.y;\n  vWorldXZ = transformed.xz;',
+      )
     shader.fragmentShader = shader.fragmentShader
-      .replace('#include <common>', '#include <common>\nvarying float vGrimeY;')
+      .replace(
+        '#include <common>',
+        '#include <common>\nvarying float vGrimeY;\nvarying vec2 vWorldXZ;\nuniform float uSeamAmt;\nuniform vec2 uSeamCenter;',
+      )
       .replace(
         '#include <map_fragment>',
-        `#include <map_fragment>
+        `#ifdef USE_MAP
+  {
+    // D7 seam drift: per-segment hash offset, ramped by distance from the
+    // event center. Snaps to zero (perfect) the instant uSeamAmt drops.
+    vec2 wUv = vMapUv;
+    float seg = floor(vWorldXZ.x / 2.4) * 7.0 + floor(vWorldXZ.y / 2.4);
+    float sh = fract(sin(seg * 127.1) * 43758.5453) - 0.5;
+    float sd = distance(vWorldXZ, uSeamCenter);
+    wUv.x += uSeamAmt * sh * 0.21 * smoothstep(16.0, 3.0, sd);
+    vec4 sampledDiffuseColor = texture2D(map, wUv);
+    diffuseColor *= sampledDiffuseColor;
+  }
+#endif
   {
     float lowGrime = 1.0 - 0.30 * smoothstep(0.62, 0.05, vGrimeY);
     float highGrime = 1.0 - 0.16 * smoothstep(2.30, 2.78, vGrimeY);
     diffuseColor.rgb *= lowGrime * highGrime;
   }`,
+      )
+  }
+
+  // D10 carpet flow: the pattern advects at ~1 cm/s, masked to zero in the
+  // center of the frame. Peripheral vision only. Deniable by design.
+  m.carpet.onBeforeCompile = (shader) => {
+    shader.uniforms.uFlowAmt = carpetFlowUniforms.uFlowAmt
+    shader.uniforms.uFlowTime = carpetFlowUniforms.uFlowTime
+    shader.uniforms.uFlowRes = carpetFlowUniforms.uFlowRes
+    shader.fragmentShader = shader.fragmentShader
+      .replace(
+        '#include <common>',
+        '#include <common>\nuniform float uFlowAmt;\nuniform float uFlowTime;\nuniform vec2 uFlowRes;',
+      )
+      .replace(
+        '#include <map_fragment>',
+        `#ifdef USE_MAP
+  {
+    vec2 fUv = vMapUv;
+    float fMask = smoothstep(0.16, 0.42, distance(gl_FragCoord.xy / uFlowRes, vec2(0.5)));
+    fUv += uFlowAmt * fMask * uFlowTime * vec2(0.00833, 0.00833); // 1 cm/s in 1.2 m UV space
+    vec4 sampledDiffuseColor = texture2D(map, fUv);
+    diffuseColor *= sampledDiffuseColor;
+  }
+#else
+  #include <map_fragment>
+#endif`,
       )
   }
 

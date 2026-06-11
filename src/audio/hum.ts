@@ -172,6 +172,13 @@ class HumVoice {
     this.outGain.gain.setTargetAtTime(0, t, secs / 3)
   }
 
+  /** Spec H: a brief −3 dB duck, then back. The level heard it too. */
+  dip(ctx: AudioContext, target: number, seconds: number): void {
+    const t = ctx.currentTime
+    this.outGain.gain.setTargetAtTime(target * 0.708, t, 0.15)
+    this.outGain.gain.setTargetAtTime(target, t + seconds, 0.4)
+  }
+
   /** Hard-cut for SILENCE events. ~80ms ramp = imperceptible click, perceptible drop. */
   silence(ctx: AudioContext, ms = 80): void {
     const t = ctx.currentTime
@@ -319,8 +326,28 @@ export class HumLayer {
     this.wash = new HumWash(ctx, noiseBuffer, dest)
   }
 
+  // D1: killed fixtures stop humming — the voice drops with the click.
+  private killedFixtures: { x: number; z: number; until: number }[] = []
+
+  killFixture(x: number, z: number, seconds: number): void {
+    this.killedFixtures.push({ x, z, until: this.ctx.currentTime + seconds })
+  }
+
   /** Reassign voice pool to the nearest fixtures with hysteresis. */
-  update(listenerX: number, listenerZ: number, fixtures: HumFixture[]): void {
+  update(listenerX: number, listenerZ: number, allFixtures: HumFixture[]): void {
+    let fixtures = allFixtures
+    if (this.killedFixtures.length > 0) {
+      const now = this.ctx.currentTime
+      this.killedFixtures = this.killedFixtures.filter((k) => k.until > now)
+      if (this.killedFixtures.length > 0) {
+        fixtures = allFixtures.filter(
+          (f) =>
+            !this.killedFixtures.some(
+              (k) => Math.abs(k.x - f.x) < 0.5 && Math.abs(k.z - f.z) < 0.5,
+            ),
+        )
+      }
+    }
     // Sort fixtures by squared distance to listener.
     const scored = fixtures.map((f) => {
       const dx = f.x - listenerX
@@ -418,6 +445,13 @@ export class HumLayer {
   /** 18.98 Hz flutter depth 0..1, ramped over ~30 s by the slow time constant. */
   setBreath(depth: number): void {
     for (const slot of this.voices) slot.voice.setBreath(this.ctx, depth)
+  }
+
+  /** Spec H: every loaded fixture dips 3 dB for `seconds`, then recovers. */
+  dipAll(seconds = 2): void {
+    for (const slot of this.voices) {
+      if (slot.fixtureKey) slot.voice.dip(this.ctx, this.nearVoiceGain, seconds)
+    }
   }
 
   /** SILENCE: ramp every voice + wash to 0 fast. */
