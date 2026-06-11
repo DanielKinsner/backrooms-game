@@ -47,6 +47,10 @@ const IMPACT_FILES = [
   'audio/impacts/impactWood_heavy_000.ogg',
   'audio/impacts/impactWood_heavy_001.ogg',
   'audio/impacts/impactWood_heavy_002.ogg',
+  // TAPE 2: long-tailed echo hits — the building is larger than it should be
+  'audio/impacts/echo_bottle.ogg',
+  'audio/impacts/echo_silo.ogg',
+  'audio/impacts/echo_dungeon.ogg',
 ] as const
 
 const DOOR_OPEN_FILES = [
