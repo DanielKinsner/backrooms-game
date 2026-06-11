@@ -844,6 +844,7 @@ export function initWingMaterials(): void {
   const carnTex = makeCarnivalTexture()
   setupTiling(carnTex, 2.0, true)
   wingMaterials.carnival.map = carnTex
+  // canvas concrete goes up instantly; the generated set swaps in async
   const concTex = makeConcreteTexture(true)
   setupTiling(concTex, 3.2, true)
   wingMaterials.concrete.map = concTex
@@ -858,6 +859,47 @@ export function initWingMaterials(): void {
     wingMaterials.concretePlain,
   ])
     m.needsUpdate = true
+  void upgradeConcrete()
+}
+
+/** Daniel-generated damp concrete replaces the flat canvas version.
+ *  The floor variant keeps its faded parking-bay line, painted over the
+ *  generated albedo so the garage stays a garage. */
+async function upgradeConcrete(): Promise<void> {
+  const loader = new THREE.TextureLoader()
+  const base = import.meta.env.BASE_URL
+  try {
+    const [c, n, r, ao] = await Promise.all([
+      loader.loadAsync(`${base}textures/concrete_damp/color.jpg`),
+      loader.loadAsync(`${base}textures/concrete_damp/normal.jpg`),
+      loader.loadAsync(`${base}textures/concrete_damp/rough.jpg`),
+      loader.loadAsync(`${base}textures/concrete_damp/ao.jpg`),
+    ])
+    // floor: bay line painted onto the albedo
+    const img = c.image as HTMLImageElement
+    const cv = document.createElement('canvas')
+    cv.width = img.width
+    cv.height = img.height
+    const ctx = cv.getContext('2d')!
+    ctx.drawImage(img, 0, 0)
+    ctx.globalAlpha = 0.4
+    ctx.fillStyle = '#b8a23a'
+    ctx.fillRect(0, Math.floor(cv.height * 0.48), cv.width, Math.max(6, cv.height * 0.027))
+    const floorTex = new THREE.CanvasTexture(cv)
+    for (const [mat, map] of [
+      [wingMaterials.concrete, floorTex],
+      [wingMaterials.concretePlain, c],
+    ] as const) {
+      mat.map = setupTiling(map, 3.2, true)
+      mat.normalMap = setupTiling(n, 3.2)
+      mat.normalScale.setScalar(0.7)
+      mat.roughnessMap = setupTiling(r, 3.2)
+      mat.aoMap = setupTiling(ao, 3.2)
+      mat.needsUpdate = true
+    }
+  } catch {
+    /* canvas concrete stays — fine */
+  }
 }
 
 const CARPET_PERIOD = 1.2
