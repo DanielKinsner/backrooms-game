@@ -596,7 +596,9 @@ export function buildChunkMeshes(data: ChunkData): BuiltChunk {
           ? wingMaterials.concretePlain
           : data.zone === 'flooded'
             ? floodedMaterials.wall
-            : worldMaterials.wall
+            : data.zone === 'office'
+              ? officeMaterials.drywall
+              : worldMaterials.wall
 
   const geos: THREE.BufferGeometry[] = []
   const buckets: Array<[GeoAccum, THREE.Material]> = [

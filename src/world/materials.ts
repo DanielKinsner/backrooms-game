@@ -648,6 +648,8 @@ export const officeMaterials = {
   /** Dead screen: dark green-grey glass. It reflects you, barely. */
   crtDead: new THREE.MeshStandardMaterial({ color: 0x1c211e, roughness: 0.18, metalness: 0.1 }),
   carpetTiles: new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.96 }),
+  /** Daniel-generated: the renovation's drywall. 2002 never left here. */
+  drywall: new THREE.MeshStandardMaterial({ color: 0xc4baa0, roughness: 0.9 }),
 }
 
 /** Flooded zone (G2): the water is shallow, dark, and very patient. */
@@ -863,6 +865,25 @@ export function initOfficeMaterials(): void {
   setupTiling(tex, 2.0, true)
   officeMaterials.carpetTiles.map = tex
   officeMaterials.carpetTiles.needsUpdate = true
+  // generated drywall streams in over the flat-color placeholder
+  const loader = new THREE.TextureLoader()
+  const base = import.meta.env.BASE_URL
+  void Promise.all([
+    loader.loadAsync(`${base}textures/drywall/color.jpg`),
+    loader.loadAsync(`${base}textures/drywall/normal.jpg`),
+    loader.loadAsync(`${base}textures/drywall/rough.jpg`),
+  ]).then(
+    ([c, n, r]) => {
+      const m = officeMaterials.drywall
+      m.map = setupTiling(c, 2.4, true)
+      m.normalMap = setupTiling(n, 2.4)
+      m.normalScale.setScalar(0.45)
+      m.roughnessMap = setupTiling(r, 2.4)
+      m.color.set(0xd9d2bc) // a shade of "we just painted this" gone stale
+      m.needsUpdate = true
+    },
+    () => undefined,
+  )
 }
 
 let wingsInitialized = false

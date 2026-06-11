@@ -82,6 +82,7 @@ this project specifically. No external license applies. Shipped as 1K JPGs;
 | Damp utility concrete (full PBR set) | `Utility_DampConcrete` | `public/textures/concrete_damp/` |
 | Soaked carpet (flooded zone floor) | `Level0_SoakedCarpetFloodedStretch` | `public/textures/carpet_soaked/` |
 | Damp-decay wallpaper (flooded zone walls) | `Level0_Wallpaper_DampDecay` | `public/textures/wall_decay/` |
+| 2002 painted drywall (office walls) | `Renovation_2002PaintedDrywall` | `public/textures/drywall/` |
 
 ## Fonts — Google Fonts (SIL OFL 1.1)
 
